@@ -14,7 +14,7 @@ const DESIGN_HEIGHT = 1080;
 const sceneLayouts = ref(null);
 const assetLibrary = ref({ subjects: [] });
 const selectedSpawnPoint = ref(null);
-const sceneKey = ref(route.params.sceneName);
+const sceneKey = ref(route.params.sn);
 const isDragging = ref(false);
 const dragOffset = ref({ x: 0, y: 0 });
 const canvasDimensions = ref({ width: 0, height: 0 });
@@ -47,7 +47,7 @@ const fetchData = async () => {
     assetLibrary.value = await libraryRes.json();
     if (!scene.value) {
       alert('场景不存在！');
-      router.push('/asset-manager');
+      router.push('/m');
     }
   } catch (error) { console.error('Error fetching data:', error); }
 };
@@ -183,7 +183,7 @@ onMounted(fetchData);
     </ResponsiveCanvas>
 
     <div class="controls-panel">
-      <router-link to="/asset-manager" class="back-button">返回</router-link>
+      <router-link to="/m" class="back-button">返回</router-link>
       <h2 v-if="scene">编辑: {{ sceneKey }}</h2>
       <button @click="saveSceneLayouts" class="save-button">保存</button>
 

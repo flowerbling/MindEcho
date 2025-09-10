@@ -17,7 +17,7 @@ const fetchSceneLayouts = async () => {
 };
 
 const editScene = (sceneName) => {
-  router.push({ name: 'SceneEditor', params: { sceneName } });
+  router.push({ name: 'SceneEditor', params: { sn: sceneName } });
 };
 
 const addNewScene = () => {

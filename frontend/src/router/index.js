@@ -10,12 +10,12 @@ const routes = [
     component: GameView,
   },
   {
-    path: '/asset-manager',
+    path: '/m',
     name: 'AssetManager',
     component: AssetManager,
   },
   {
-    path: '/scene-editor/:sceneName',
+    path: '/s/:sn',
     name: 'SceneEditor',
     component: SceneEditor,
     props: true,
