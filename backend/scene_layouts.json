@@ -1,0 +1,100 @@
+{
+  "圆形大厅": {
+    "background_image": "backgrounds/hall_circular.png",
+    "spawn_points": [
+      {
+        "id": 1757404568733,
+        "x": 0.49880846850788024,
+        "y": 0.4519033974621367,
+        "width": 0.026041666666666668,
+        "height": 0.046296296296296294,
+        "rotation": 0,
+        "subjects_config": [
+          {
+            "name": "守卫",
+            "width": 0.15625,
+            "height": 0.39557920589439216,
+            "rotation": 0
+          },
+          {
+            "name": "水晶",
+            "width": 0.15625,
+            "height": 0.2777777777777778,
+            "rotation": 0
+          }
+        ],
+        "previewingSubjectName": "水晶"
+      },
+      {
+        "id": 1757406017486,
+        "x": 0.49880846850788024,
+        "y": 0.19909946786737617,
+        "width": 0.026041666666666668,
+        "height": 0.046296296296296294,
+        "rotation": 0,
+        "subjects_config": [
+          {
+            "name": "门",
+            "width": 0.14735848404959534,
+            "height": 0.3156774457634057,
+            "rotation": 0
+          }
+        ],
+        "previewingSubjectName": "门"
+      },
+      {
+        "id": 1757410693627,
+        "x": 0.6765625,
+        "y": 0.8101851851851852,
+        "width": 0.026041666666666668,
+        "height": 0.046296296296296294,
+        "rotation": 0,
+        "subjects_config": [
+          {
+            "name": "守卫",
+            "width": 0.15625,
+            "height": 0.32407407407407407,
+            "rotation": 0
+          }
+        ],
+        "previewingSubjectName": "守卫"
+      }
+    ]
+  },
+  "黑暗走廊": {
+    "background_image": "backgrounds/corridor_dark.png",
+    "spawn_points": [
+      {
+        "id": 1757469722128,
+        "x": 0.45729166666666665,
+        "y": 0.2222222222222222,
+        "width": 0.026041666666666668,
+        "height": 0.046296296296296294,
+        "rotation": 0,
+        "subjects_config": [
+          {
+            "name": "守卫",
+            "width": 0.10416666666666667,
+            "height": 0.2777777777777778,
+            "rotation": 0
+          },
+          {
+            "name": "门",
+            "width": 0.18229166666666666,
+            "height": 0.4166666666666667,
+            "rotation": 0
+          }
+        ],
+        "previewingSubjectName": "守卫"
+      }
+    ]
+  },
+  "发光神殿": {
+    "background_image": "backgrounds/sanctuary_glowing.png",
+    "spawn_points": []
+  },
+  "数据流空间": {
+    "background_image": "backgrounds/data_stream_space.png",
+    "spawn_points": []
+  }
+}

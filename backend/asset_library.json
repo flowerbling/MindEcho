@@ -1,0 +1,25 @@
+{
+  "backgrounds": [
+    "hall_circular.png",
+    "corridor_dark.png",
+    "sanctuary_glowing.png",
+    "data_stream_space.png"
+  ],
+  "subjects": [
+    {
+      "name": "门",
+      "description": "一扇紧闭的厚重石门，表面有古老的雕刻。",
+      "file_path": "objects/door_closed.png"
+    },
+    {
+      "name": "水晶",
+      "description": "一个可以被激活的神秘水晶。",
+      "file_path": "objects/crystal_inactive.png"
+    },
+    {
+      "name": "守卫",
+      "description": "一个在指定区域巡逻的守卫。",
+      "file_path": "entities/guard_patrolling.png"
+    }
+  ]
+}
