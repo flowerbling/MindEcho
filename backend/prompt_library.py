@@ -1,7 +1,7 @@
 import json # Import json for schema serialization
 from typing import Dict, List
 from langchain_core.utils.function_calling import convert_to_json_schema # Import the tool
-from backend.enhanced_models import MainStoryline, DynamicContent, MapTemplate # Import models for schema generation
+from backend.enhanced_models import MainStoryline, DynamicContent, MapTemplate, ScenePopulation # Import models for schema generation
 
 class PromptLibrary:
     """提示词库 - 集中管理所有系统提示词"""
@@ -11,6 +11,7 @@ class PromptLibrary:
         self.main_storyline_schema = json.dumps(convert_to_json_schema(MainStoryline), indent=2, ensure_ascii=False)
         self.dynamic_content_schema = json.dumps(convert_to_json_schema(DynamicContent), indent=2, ensure_ascii=False)
         self.map_template_schema = json.dumps(convert_to_json_schema(MapTemplate), indent=2, ensure_ascii=False)
+        self.scene_population_schema = json.dumps(convert_to_json_schema(ScenePopulation), indent=2, ensure_ascii=False)
 
         self.prompts = {
             "map_generation": {
@@ -83,8 +84,8 @@ class PromptLibrary:
 
                 **核心要求**:
                 1.  **多场景结构**: 整个故事必须被分解为至少3个逻辑连贯的场景。
-                2.  **场景目标**: 每个场景都必须有一个明确的故事描述(description)和完成条件(completion_condition)。
-                3.  **结构化条件**: 场景的`completion_condition`以及最终的`victory_condition`和`failure_conditions`必须使用结构化格式: "type:target:value" 或 "type:target"。
+                2.  **场景目标**: 每个场景都必须有一个明确的故事描述(description)。
+                3.  **结构化条件**: 最终的`victory_condition`和`failure_conditions`必须使用结构化格式: "type:target:value" 或 "type:target"。
                     - 例如: "player_has_item:ancient_artifact", "entity_state:gatekeeper:defeated", "clue_discovered:secret_code"。
                 
                 输出格式必是有效的JSON，严格符合MainStoryline模型结构。
@@ -95,7 +96,10 @@ class PromptLibrary:
                 游戏主题: {theme}
                 难度等级: {difficulty}
                 
-                请创作一个包含多个场景的完整游戏剧本。
+                **可用地图及实体信息**:
+                {maps_and_entities_info}
+                
+                请根据以上地图和实体信息，创作一个包含多个场景的完整游戏剧本。
                 """
             },
             
@@ -144,6 +148,71 @@ class PromptLibrary:
                 故事背景: {storyline_description}
                 
                 请为此游戏设计一套独特的法则。
+                """
+            },
+            "scene_population": {
+                "system": f"""
+                你是一位专业的游戏关卡设计师。你的任务是为一个特定的游戏场景填充有意义的实体（NPC和物品），
+                确保每个实体都与主线剧情紧密相连。
+
+                **核心要求**:
+                1.  **忠于剧情**: 所有放置的实体都必须服务于当前场景的目标和整个主线故事。
+                2.  **利用刷新点**: 你必须从提供的地图刷新点列表中选择位置来放置实体。
+                3.  **选择合适的实体**: 从提供的可用实体模板中选择最符合剧情需求的实体。
+                4.  **提供理由**: 为每一个放置的实体提供一个清晰的“剧情原因”(narrative_reason)，解释为什么它会出现在那里。
+                5.  **自定义**: 如有必要，你可以为实体实例覆盖默认名称或初始状态，使其更贴合剧情。
+
+                输出格式必须是有效的JSON，严格符合ScenePopulation模型结构。
+                JSON Schema如下:
+                {self.scene_population_schema}
+                """,
+                "user_template": """
+                **主线剧情**: {storyline_title} - {storyline_description}
+                **当前场景**: {scene_name} - {scene_description}
+
+                **已选地图信息**:
+                - 地图ID: {map_id}
+                - 地图描述: {map_description}
+                - 可用刷新点: {spawn_points}
+
+                **可用实体模板**:
+                {entity_templates}
+
+                请为这个场景选择并放置合适的实体，确保它们能推动剧情发展。
+                """
+            },
+            "scene_population_v2": {
+                "system": f"""
+                你是一位专业的游戏关卡设计师。你的任务是为一个特定的游戏场景填充有意义的实体（NPC和物品），
+                确保每个实体都与主线剧情紧密相连。
+
+                **核心要求**:
+                1.  **忠于剧情**: 所有放置的实体都必须服务于当前场景的目标和整个主线故事。
+                2.  **利用刷新点**: 你必须从提供的地图刷新点列表中选择位置来放置实体。
+                3.  **选择合适的实体**: 从提供的可用实体模板中选择最符合剧情需求的实体。
+                4.  **提供理由**: 为每一个放置的实体提供一个清晰的“剧情原因”(narrative_reason)，解释为什么它会出现在那里。
+                5.  **结构化初始状态**: 
+                    - 对于NPC (`entity_type: "npc"`), `override_initial_state` 应为空的JSON对象 `{{}}`。
+                    - 对于物品 (`entity_type: "object"`), `override_initial_state` 必须包含一个 `interactions` 列表。列表中的值必须是 `InteractionType` 枚举的成员 (e.g., "pickup", "observe", "activate")。
+                6.  **指定实体类型**: 必须为每个实体明确设置 `entity_type` 字段 ("npc" 或 "object")。
+
+                输出格式必须是有效的JSON，严格符合ScenePopulation模型结构。
+                JSON Schema如下:
+                {self.scene_population_schema}
+                """,
+                "user_template": """
+                **主线剧情**: {storyline_title} - {storyline_description}
+                **当前场景**: {scene_name} - {scene_description}
+
+                **已选地图信息**:
+                - 地图ID: {map_id}
+                - 地图描述: {map_description}
+                - 可用刷新点: {spawn_points}
+
+                **可用实体模板**:
+                {entity_templates}
+
+                请为这个场景选择并放置合适的实体，确保它们能推动剧情发展，并严格遵守结构化初始状态的规则。
                 """
             }
         }

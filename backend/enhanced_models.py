@@ -64,6 +64,7 @@ class EntityTemplate(BaseModel):
     id: str = Field(..., description="实体模板的唯一标识符")
     name: str = Field(..., description="实体的名称")
     description: str = Field(..., description="实体的详细描述")
+    story_background: Optional[str] = Field(None, description="NPC的故事背景")
     entity_type: EntityType = Field(..., description="实体的类型（NPC、物品、环境）")
     image_path: str = Field(..., description="实体图片的路径")
     base_stats: Dict[str, Any] = Field({}, description="实体的基础属性（如生命值、攻击力）")
@@ -85,10 +86,11 @@ class EntityInstance(BaseModel):
     template_id: str = Field(..., description="实体所基于的模板ID")
     name: str = Field(..., description="实体实例的名称")
     current_state: Dict[str, Any] = Field({}, description="实体实例的当前状态")
-    position: Dict[str, int] = Field(..., description="实体在地图上的位置坐标 {'x': int, 'y': int}")
+    position: Dict[str, float] = Field(..., description="实体在地图上的位置和尺寸 {'x': float, 'y': float, 'width': float, 'height': float}")
     inventory: List[str] = Field([], description="实体持有的物品ID列表")
     active_effects: List[Dict[str, Any]] = Field([], description="实体当前活跃的效果列表")
     interaction_history: List[Dict[str, Any]] = Field([], description="实体与玩家的互动历史")
+    chat_history: Optional[List[Dict[str, str]]] = Field(None, description="与玩家的聊天记录")
     
     def __init__(self, **data):
         if data.get('id') is None:
@@ -100,8 +102,7 @@ class Scene(BaseModel):
     id: str = Field(..., description="场景的唯一标识符")
     name: str = Field(..., description="场景的名称")
     description: str = Field(..., description="场景的故事描述和目标")
-    map_theme: str = Field(..., description="该场景建议的地图主题")
-    completion_condition: str = Field(..., description="完成该场景并进入下一场景的条件")
+    map_theme: str = Field(..., description="该场景建议的地图主题，如：古代遗迹、现代都市")
 
 class GameSession(BaseModel):
     session_id: str = Field(..., description="当前游戏会话的唯一标识符")
@@ -132,15 +133,33 @@ class DynamicContent(BaseModel):
     rule_changes: List[str] = Field([], description="游戏规则的变化列表")
     phase_transitions: Optional[GamePhase] = Field(None, description="如果游戏阶段发生变化，指定新的阶段")
 
+class NpcInitialState(BaseModel):
+    chat_history: List[Dict[str, str]] = Field([], description="与玩家的初始聊天记录")
+
+class ObjectInitialState(BaseModel):
+    interactions: List[InteractionType] = Field([], description="对象可用的互动选项列表")
+
+class PopulatedEntity(BaseModel):
+    template_id: str = Field(..., description="要实例化的实体模板ID")
+    spawn_point_id: str = Field(..., description="实体应放置的刷新点ID")
+    narrative_reason: str = Field(..., description="将此实体放置在此处的剧情原因")
+    entity_type: EntityType = Field(..., description="实体类型，用于区分NPC和对象")
+    # AI可以覆盖模板中的默认名称或状态
+    override_name: Optional[str] = Field(None, description="覆盖实体模板中的默认名称")
+    override_initial_state: Union[NpcInitialState, ObjectInitialState, Dict[str, Any]] = Field({}, description="覆盖实体模板中的初始状态")
+
+class ScenePopulation(BaseModel):
+    entities_to_spawn: List[PopulatedEntity] = Field([], description="为该场景生成的实体列表")
+
 # 主线剧情模板
 class MainStoryline(BaseModel):
     id: str = Field(..., description="主线剧情的唯一标识符")
     title: str = Field(..., description="主线剧情的标题")
-    description: str = Field(..., description="主线剧情的详细描述")
+    description: str = Field(..., description="主线剧情的详细描述，用中文来描述。")
     theme: str = Field(..., description="主线剧情的主题")
     scenes: List[Scene] = Field([], description="构成主线剧情的场景列表")
-    victory_condition: str = Field(..., description="整个主线剧情的最终胜利条件")
-    failure_conditions: List[str] = Field([], description="整个主线剧情的最终失败条件列表")
+    victory_condition: str = Field(..., description="整个主线剧情的最终胜利条件，用中文来描述。")
+    failure_conditions: List[str] = Field([], description="整个主线剧情的最终失败条件列表，用中文来描述。")
 
 # AI提示词模板
 class PromptTemplate(BaseModel):

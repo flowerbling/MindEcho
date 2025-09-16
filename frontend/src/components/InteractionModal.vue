@@ -8,19 +8,40 @@ const props = defineProps({
 
 const emits = defineEmits(['interact', 'close']);
 
-const handleInteract = () => {
-  emits('interact', props.target);
+const handleInteract = (interactionType) => {
+  emits('interact', { target: props.target, interactionType });
   emits('close');
+};
+
+const interactionTranslations = {
+  pickup: '拾取',
+  use: '使用',
+  trade: '交易',
+  bribe: '贿赂',
+  attack: '攻击',
+  talk: '交谈',
+  observe: '调查',
+  activate: '激活',
+};
+
+const getTranslatedInteraction = (interaction) => {
+  return interactionTranslations[interaction] || interaction;
 };
 </script>
 
 <template>
   <div v-if="show" class="modal-overlay" @click.self="emits('close')">
     <div class="modal-content">
-      <h2>与 {{ target?.name }} 互动</h2>
-      <p>你想要如何与 {{ target?.name }} 互动？</p>
+      <h2>发现了 {{ target?.name }}</h2>
+      <p>{{ target?.description || '一个神秘的物品，似乎可以与之互动。' }}</p>
       <div class="modal-actions">
-        <button @click="handleInteract" class="interact-button">互动</button>
+        <button 
+          v-for="interaction in target?.interactions" 
+          :key="interaction"
+          @click="handleInteract(interaction)" 
+          class="interact-button">
+          {{ getTranslatedInteraction(interaction) }}
+        </button>
         <button @click="emits('close')" class="close-button">取消</button>
       </div>
     </div>

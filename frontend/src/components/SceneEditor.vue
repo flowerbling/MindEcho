@@ -29,17 +29,21 @@ watch(canvasDimensions, (newVal) => {
 const scene = computed(() => sceneLayouts.value?.[sceneKey.value]);
 const subjects = computed(() => assetLibrary.value?.subjects || []);
 
+const scaleFactor = computed(() => {
+  if (!canvasDimensions.value.width) return 1;
+  return canvasDimensions.value.width / DESIGN_WIDTH;
+});
+
 // --- Coordinate Conversion ---
-const toPixels = (val, axis) => {
-  if (!canvasDimensions.value.width || !canvasDimensions.value.height) return 0;
-  const base = axis === 'x' ? canvasDimensions.value.width : canvasDimensions.value.height;
-  return Math.round(val * base);
+// Converts a design coordinate (from 1920x1080) to a screen pixel coordinate
+const toCanvasPixels = (designValue) => {
+  return Math.round((designValue || 0) * scaleFactor.value);
 };
 
-const toRelative = (val, axis) => {
-  if (!canvasDimensions.value.width || !canvasDimensions.value.height) return 0;
-  const base = axis === 'x' ? canvasDimensions.value.width : canvasDimensions.value.height;
-  return val / base;
+// Converts a screen pixel coordinate to a design coordinate
+const toDesignValue = (pixelValue) => {
+  if (scaleFactor.value === 0) return 0;
+  return Math.round((pixelValue || 0) / scaleFactor.value);
 };
 
 // --- API Communication ---
@@ -51,18 +55,18 @@ const fetchData = async () => {
     
     // Populate maps and entities
     maps.value = data.maps.reduce((acc, map) => {
-      // Convert absolute spawn point coordinates and dimensions to relative
-      const convertedMap = {
+      // Ensure all spawn points have the required fields, using absolute coordinates
+      const processedMap = {
         ...map,
         spawn_points: map.spawn_points.map(sp => ({
           ...sp,
-          x: sp.x / map.width, // Convert to relative X
-          y: sp.y / map.height, // Convert to relative Y
-          width: sp.width / map.width, // Convert to relative width
-          height: sp.height / map.height, // Convert to relative height
+          x: sp.x || 0,
+          y: sp.y || 0,
+          width: sp.width || 100, // Default width if not provided
+          height: sp.height || 100, // Default height if not provided
         }))
       };
-      acc[map.id] = convertedMap; // Assuming map.id is the key
+      acc[map.id] = processedMap; // Use map id as the key
       return acc;
     }, {});
     entities.value = data.entities;
@@ -90,19 +94,20 @@ const saveSceneLayouts = async () => {
     height: DESIGN_HEIGHT, // Send design height
     theme: scene.value.theme || '未知',
     difficulty_level: scene.value.difficulty_level || 1,
-    spawn_points: (scene.value.spawn_points || []).map(sp => ({ // Ensure spawn_points is an array
-      id: String(sp.id), // Ensure ID is string
-      x: parseFloat(sp.x), // Ensure float
-      y: parseFloat(sp.y), // Ensure float
-      width: parseFloat(sp.width), // Ensure float
-      height: parseFloat(sp.height), // Ensure float
-      rotation: parseFloat(sp.rotation || 0.0), // Ensure float, default to 0.0
-      spawn_type: sp.spawn_type || 'random', // Default if not set, ensure uppercase for Enum
-      entity_types: (sp.subjects_config || []).map(sc => entities.value.find(e => e.name === sc.name)?.entity_type).filter(Boolean), // Extract entity_type from subjects_config
+    spawn_points: (scene.value.spawn_points || []).map(sp => ({
+      id: String(sp.id),
+      // Send absolute design coordinates directly
+      x: Math.round(sp.x),
+      y: Math.round(sp.y),
+      width: Math.round(sp.width),
+      height: Math.round(sp.height),
+      rotation: parseFloat(sp.rotation || 0.0),
+      spawn_type: sp.spawn_type || 'random',
+      entity_types: (sp.subjects_config || []).map(sc => entities.value.find(e => e.name === sc.name)?.entity_type).filter(Boolean),
       spawn_conditions: sp.spawn_conditions || {},
-      spawn_probability: parseFloat(sp.spawn_probability || 0.5), // Ensure float, default to 0.5
-      max_spawns: parseInt(sp.max_spawns || 1), // Ensure int, default to 1
-      cooldown_turns: parseInt(sp.cooldown_turns || 0), // Ensure int, default to 0
+      spawn_probability: parseFloat(sp.spawn_probability || 0.5),
+      max_spawns: parseInt(sp.max_spawns || 1),
+      cooldown_turns: parseInt(sp.cooldown_turns || 0),
     })),
     connections: scene.value.connections || [], // Ensure connections is an array
   };
@@ -127,16 +132,16 @@ const addSpawnPoint = (event) => {
   if (!scene.value) return;
   const rect = event.currentTarget.getBoundingClientRect();
   
-  // Default size for new spawn points in pixels
-  const defaultPixelWidth = 50;
-  const defaultPixelHeight = 50;
+  // Default size for new spawn points in design units
+  const defaultDesignWidth = 100;
+  const defaultDesignHeight = 100;
 
   const newPoint = {
     id: Date.now(),
-    x: toRelative(event.clientX - rect.left, 'x'),
-    y: toRelative(event.clientY - rect.top, 'y'),
-    width: toRelative(defaultPixelWidth, 'x'), // Convert pixel width to relative
-    height: toRelative(defaultPixelHeight, 'y'), // Convert pixel height to relative
+    x: toDesignValue(event.clientX - rect.left),
+    y: toDesignValue(event.clientY - rect.top),
+    width: defaultDesignWidth,
+    height: defaultDesignHeight,
     rotation: 0,
     subjects_config: [],
     previewingSubjectName: null,
@@ -171,16 +176,16 @@ const startDrag = (event, point) => {
   selectSpawnPoint(point);
   const rect = event.currentTarget.parentElement.getBoundingClientRect();
   dragOffset.value = {
-    x: (event.clientX - rect.left) - toPixels(point.x, 'x'),
-    y: (event.clientY - rect.top) - toPixels(point.y, 'y'),
+    x: (event.clientX - rect.left) - toCanvasPixels(point.x),
+    y: (event.clientY - rect.top) - toCanvasPixels(point.y),
   };
 };
 
 const onDrag = (event) => {
   if (isDragging.value && selectedSpawnPoint.value) {
     const rect = event.currentTarget.getBoundingClientRect();
-    selectedSpawnPoint.value.x = toRelative((event.clientX - rect.left) - dragOffset.value.x, 'x');
-    selectedSpawnPoint.value.y = toRelative((event.clientY - rect.top) - dragOffset.value.y, 'y');
+    selectedSpawnPoint.value.x = toDesignValue((event.clientX - rect.left) - dragOffset.value.x);
+    selectedSpawnPoint.value.y = toDesignValue((event.clientY - rect.top) - dragOffset.value.y);
   }
 };
 
@@ -196,7 +201,7 @@ const toggleSubjectForSpawnPoint = (point, subjectName) => {
     point.subjects_config.splice(index, 1);
     if (point.previewingSubjectName === subjectName) point.previewingSubjectName = null;
   } else {
-    point.subjects_config.push({ name: subjectName, width: 150 / DESIGN_WIDTH, height: 150 / DESIGN_HEIGHT, rotation: 0 });
+    point.subjects_config.push({ name: subjectName, width: 150, height: 150, rotation: 0 });
   }
 };
 
@@ -227,10 +232,10 @@ onMounted(fetchData);
           class="spawn-point"
           :class="{ selected: selectedSpawnPoint?.id === point.id, 'is-previewing': point.previewingSubjectName }"
           :style="{
-            left: `${toPixels(point.x, 'x')}px`,
-            top: `${toPixels(point.y, 'y')}px`,
-            width: `${toPixels(point.width, 'x')}px`,
-            height: `${toPixels(point.height, 'y')}px`,
+            left: `${toCanvasPixels(point.x)}px`,
+            top: `${toCanvasPixels(point.y)}px`,
+            width: `${toCanvasPixels(point.width)}px`,
+            height: `${toCanvasPixels(point.height)}px`,
             transform: `translate(-50%, -50%) rotate(${point.rotation}deg)`
           }"
           @click.stop="selectSpawnPoint(point)"
@@ -242,10 +247,10 @@ onMounted(fetchData);
             v-if="point.previewingSubjectName"
             class="subject-preview-on-canvas"
             :style="{
-              left: `${toPixels(point.x, 'x')}px`,
-              top: `${toPixels(point.y, 'y')}px`,
-              width: `${toPixels(getSubjectConfig(point, point.previewingSubjectName).width, 'x')}px`,
-              height: `${toPixels(getSubjectConfig(point, point.previewingSubjectName).height, 'y')}px`,
+              left: `${toCanvasPixels(point.x)}px`,
+              top: `${toCanvasPixels(point.y)}px`,
+              width: `${toCanvasPixels(getSubjectConfig(point, point.previewingSubjectName).width)}px`,
+              height: `${toCanvasPixels(getSubjectConfig(point, point.previewingSubjectName).height)}px`,
               transform: `translate(-50%, -50%) rotate(${getSubjectConfig(point, point.previewingSubjectName).rotation}deg)`
             }"
           >
@@ -262,12 +267,12 @@ onMounted(fetchData);
 
       <div v-if="selectedSpawnPoint">
         <h3>刷新点</h3>
-        <!-- We show pixel values for intuitive editing, but store relative values -->
-        <label>中心X: <input type="number" :value="Math.round(toPixels(selectedSpawnPoint.x, 'x'))" @input="selectedSpawnPoint.x = toRelative($event.target.value, 'x')"></label>
-        <label>中心Y: <input type="number" :value="Math.round(toPixels(selectedSpawnPoint.y, 'y'))" @input="selectedSpawnPoint.y = toRelative($event.target.value, 'y')"></label>
-        <label>区域宽: <input type="number" :value="Math.round(toPixels(selectedSpawnPoint.width, 'x'))" @input="selectedSpawnPoint.width = toRelative($event.target.value, 'x')"></label>
-        <label>区域高: <input type="number" :value="Math.round(toPixels(selectedSpawnPoint.height, 'y'))" @input="selectedSpawnPoint.height = toRelative($event.target.value, 'y')"></label>
-        <label>区域角度: <input type="number" v-model="selectedSpawnPoint.rotation"></label>
+        <!-- Editing absolute design values (based on 1920x1080) -->
+        <label>中心X: <input type="number" v-model.number="selectedSpawnPoint.x"></label>
+        <label>中心Y: <input type="number" v-model.number="selectedSpawnPoint.y"></label>
+        <label>区域宽: <input type="number" v-model.number="selectedSpawnPoint.width"></label>
+        <label>区域高: <input type="number" v-model.number="selectedSpawnPoint.height"></label>
+        <label>区域角度: <input type="number" v-model.number="selectedSpawnPoint.rotation"></label>
         
         <h4>可刷新主体</h4>
         <div v-for="subject in subjects" :key="subject.name" class="subject-config-item">
@@ -280,9 +285,9 @@ onMounted(fetchData);
             </button>
           </div>
           <div v-if="getSubjectConfig(selectedSpawnPoint, subject.name)" class="subject-props">
-            <label>宽: <input type="number" :value="Math.round(toPixels(getSubjectConfig(selectedSpawnPoint, subject.name).width, 'x'))" @input="getSubjectConfig(selectedSpawnPoint, subject.name).width = toRelative($event.target.value, 'x')"></label>
-            <label>高: <input type="number" :value="Math.round(toPixels(getSubjectConfig(selectedSpawnPoint, subject.name).height, 'y'))" @input="getSubjectConfig(selectedSpawnPoint, subject.name).height = toRelative($event.target.value, 'y')"></label>
-            <label>角度: <input type="number" v-model="getSubjectConfig(selectedSpawnPoint, subject.name).rotation"></label>
+            <label>宽: <input type="number" v-model.number="getSubjectConfig(selectedSpawnPoint, subject.name).width"></label>
+            <label>高: <input type="number" v-model.number="getSubjectConfig(selectedSpawnPoint, subject.name).height"></label>
+            <label>角度: <input type="number" v-model.number="getSubjectConfig(selectedSpawnPoint, subject.name).rotation"></label>
           </div>
         </div>
         <button @click="deleteSelectedSpawnPoint" class="delete-button">删除刷新点</button>

@@ -94,11 +94,24 @@ class AIGameMaster:
             print(f"实体互动生成错误: {e}")
             return {"dialogue": "...", "state_change": {}, "items_given": [], "events_triggered": []}
     
-    async def generate_storyline(self, theme: str, difficulty: int) -> MainStoryline:
+    async def generate_storyline(self, theme: str, difficulty: int, maps_data: List[Dict[str, Any]], entities_data: List[Dict[str, Any]]) -> MainStoryline:
         """生成主线剧情"""
+        
+        maps_info = "\n".join([f"- 地图ID: {m['id']}, 描述: {m['description']}" for m in maps_data])
+        entities_info = "\n".join([f"- 实体ID: {e['id']}, 描述: {e['description']}" for e in entities_data])
+        
+        maps_and_entities_info = f"""
+        可用地图列表:
+        {maps_info}
+        
+        可用实体列表:
+        {entities_info}
+        """
+
         prompt_context = {
             "theme": theme,
-            "difficulty": difficulty
+            "difficulty": difficulty,
+            "maps_and_entities_info": maps_and_entities_info
         }
         prompt = prompt_library.format_user_prompt("storyline_generation", prompt_context)
         
@@ -209,7 +222,74 @@ class AIGameMaster:
             return MapTemplate(id=f"default_{theme.lower()}", name=f"默认{theme}地图", theme=theme,
                                description="一个由AI生成失败时提供的默认地图。",
                                spawn_points=[SpawnPoint(id="sp_center", x=400, y=300, entity_types=["npc", "object"])])
-    
+
+    async def generate_scene_population(self, storyline: MainStoryline, scene: Scene, game_map: MapTemplate, entity_templates: List[EntityTemplate]) -> ScenePopulation:
+        """使用AI为场景填充有意义的实体"""
+        
+        # 格式化刷新点和实体模板以供提示词使用
+        spawn_points_info = json.dumps([sp.dict() for sp in game_map.spawn_points], ensure_ascii=False, indent=2)
+        entity_templates_info = json.dumps([et.dict() for et in entity_templates], ensure_ascii=False, indent=2)
+
+        prompt_context = {
+            "storyline_title": storyline.title,
+            "storyline_description": storyline.description,
+            "scene_name": scene.name,
+            "scene_description": scene.description,
+            "map_id": game_map.id,
+            "map_description": game_map.description,
+            "spawn_points": spawn_points_info,
+            "entity_templates": entity_templates_info
+        }
+        prompt = prompt_library.format_user_prompt("scene_population", prompt_context)
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": prompt_library.get_system_prompt("scene_population_v2")},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=2500
+            )
+            result_content = response.choices[0].message.content
+            fixed_content = fix_json(result_content)
+            population_data = json.loads(fixed_content)
+            return ScenePopulation(**population_data)
+
+        except Exception as e:
+            print(f"AI场景实体生成错误: {e}")
+            return ScenePopulation() # 返回一个空的实体列表
+
+    async def generate_npc_dialogue(self, game_session: GameSession, npc: EntityInstance, player_message: str) -> str:
+        """为NPC生成对话回应"""
+        
+        template = self.entity_manager.entity_templates.get(npc.template_id)
+        
+        prompt_context = {
+            "npc_name": npc.name,
+            "npc_background": template.story_background if template else "无",
+            "player_message": player_message,
+            "chat_history": json.dumps(npc.chat_history, ensure_ascii=False) if npc.chat_history else "无",
+            "game_context": json.dumps(game_session.story_context, ensure_ascii=False)
+        }
+        prompt = prompt_library.format_user_prompt("npc_dialogue", prompt_context)
+        
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": prompt_library.get_system_prompt("npc_dialogue")},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.75,
+                max_tokens=200
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"NPC对话生成错误: {e}")
+            return "..."
+
     def _get_default_storyline(self, theme: str) -> MainStoryline:
         """获取默认剧情模板"""
         return MainStoryline(
@@ -218,8 +298,8 @@ class AIGameMaster:
             description="一个神秘的冒险等待着你...",
             theme=theme,
             scenes=[
-                Scene(id="scene_1", name="初始场景", description="故事的开始", map_theme=theme, completion_condition="clue_discovered:welcome"),
-                Scene(id="scene_2", name="最终挑战", description="面对最终的挑战", map_theme=f"{theme}_boss", completion_condition="entity_state:boss:defeated")
+                Scene(id="scene_1", name="初始场景", description="故事的开始", map_theme=theme),
+                Scene(id="scene_2", name="最终挑战", description="面对最终的挑战", map_theme=f"{theme}_boss")
             ],
             victory_condition="entity_state:boss:defeated",
             failure_conditions=["player_stat:health:le:0"]

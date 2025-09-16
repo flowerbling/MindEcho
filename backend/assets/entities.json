@@ -3,6 +3,7 @@
     "id": "npc_wise_old_man",
     "name": "智慧长者",
     "description": "一位神秘的长者，似乎知道这个世界的许多秘密。",
+    "story_background": "这位长者曾是古代文明的守护者，亲眼见证了世界的变迁。他掌握着失落的知识，但只与那些他认为值得信赖的人分享。",
     "entity_type": "npc",
     "image_path": "entities/wise_old_man.png",
     "base_stats": {

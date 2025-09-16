@@ -16,16 +16,27 @@ class GameEngine:
         self.storyline = None
         
     async def start_new_game(self, theme: str, difficulty: int):
-        """开始新游戏 (SSE异步生成器)"""
+        """开始新游戏 (SSE异步生成器 V2 - 整合流程)"""
         
+        # 步骤 1: 加载静态资源并进行转换
         yield {"status": "loading", "message": "正在加载静态资源..."}
-        self._load_assets()
+        with open("backend/assets/maps.json", "r", encoding="utf-8") as f:
+            maps_data = json.load(f)
+
+        # Load map templates directly without coordinate conversion
+        self.map_manager.load_map_templates(maps_data)
         
+        with open("backend/assets/entities.json", "r", encoding="utf-8") as f:
+            entities_data = json.load(f)
+        self.entity_manager.load_entity_templates(entities_data)
+
+        # 步骤 2: AI生成主线剧情
         yield {"status": "loading", "message": "AI正在生成游戏剧本..."}
-        self.storyline = await self.ai_master.generate_storyline(theme, difficulty)
+        self.storyline = await self.ai_master.generate_storyline(theme, difficulty, maps_data, entities_data)
         if not self.storyline or not self.storyline.scenes:
             raise ValueError("AI未能生成有效的主线剧本。")
-        
+
+        # 步骤 3: 初始化游戏会话
         yield {"status": "loading", "message": "正在初始化游戏会话..."}
         initial_scene = self.storyline.scenes[0]
         self.game_session = GameSession(
@@ -34,19 +45,73 @@ class GameEngine:
             current_phase=GamePhase.INITIALIZATION,
             victory_conditions=[self.storyline.victory_condition],
             failure_conditions=self.storyline.failure_conditions,
-            story_context={"title": self.storyline.title, "theme": self.storyline.theme}
+            story_context={"title": self.storyline.title, "theme": self.storyline.theme, 'main_story': self.storyline.description}
         )
+        yield {"status": "loading", "message": "会话已创建", "gameState": self.get_game_state()}
 
+        # 步骤 4: AI生成游戏规则
         yield {"status": "loading", "message": "AI正在生成游戏规则..."}
         game_rules = await self.ai_master.generate_game_rules(self.storyline.theme, self.storyline.description)
         self.game_session.game_rules.extend(game_rules)
+        yield {"status": "loading", "message": "规则已生成", "gameState": self.get_game_state()}
 
-        # 正确地迭代异步生成器并转发其产生的状态
-        async for status in self._load_scene(initial_scene):
-            yield status
+        # 步骤 5: 加载初始场景 (整合自 _load_scene)
+        yield {"status": "loading", "message": f"正在加载场景: {initial_scene.name}..."}
         
+        # 5a. 选择地图
+        selected_map = next((m for m in self.map_manager.map_templates.values() if m.theme == initial_scene.map_theme), None)
+        if not selected_map:
+            selected_map = list(self.map_manager.map_templates.values())[0]
+        self.map_manager.switch_to_map(selected_map.id)
+        self.game_session.current_map_id = selected_map.id
+        yield {"status": "loading", "message": "地图已选择", "gameState": self.get_game_state()}
+
+        # 5b. AI填充实体
+        yield {"status": "loading", "message": f"AI正在为场景 '{initial_scene.name}' 布置实体..."}
+        all_entity_templates = list(self.entity_manager.entity_templates.values())
+        scene_population = await self.ai_master.generate_scene_population(
+            self.storyline, initial_scene, selected_map, all_entity_templates
+        )
+
+        # 5c. 实例化实体
+        spawn_points_map = {sp.id: sp for sp in selected_map.spawn_points}
+        for pop_entity in scene_population.entities_to_spawn:
+            template = self.entity_manager.entity_templates.get(pop_entity.template_id)
+            spawn_point = spawn_points_map.get(pop_entity.spawn_point_id)
+            if not template or not spawn_point: continue
+
+            initial_state = template.base_stats.copy()
+            initial_state['narrative_reason'] = pop_entity.narrative_reason
+            
+            chat_history = None
+            
+            if pop_entity.entity_type == EntityType.NPC:
+                if isinstance(pop_entity.override_initial_state, NpcInitialState):
+                    chat_history = pop_entity.override_initial_state.chat_history
+            elif pop_entity.entity_type == EntityType.OBJECT:
+                if isinstance(pop_entity.override_initial_state, ObjectInitialState):
+                    initial_state['interactions'] = [interaction.value for interaction in pop_entity.override_initial_state.interactions]
+
+            entity_instance = EntityInstance(
+                template_id=template.id,
+                name=pop_entity.override_name or template.name,
+                current_state=initial_state,
+                position={
+                    "x": spawn_point.x, 
+                    "y": spawn_point.y,
+                    "width": spawn_point.width,
+                    "height": spawn_point.height
+                },
+                chat_history=chat_history
+            )
+            self.game_session.active_entities.append(entity_instance)
+        
+        self.game_session.story_context['current_scene_objective'] = initial_scene.description
+        yield {"status": "loading", "message": "实体已放置", "gameState": self.get_game_state()}
+
+        # 步骤 6: 游戏准备就绪
         self.game_session.current_phase = GamePhase.EXPLORATION
-        yield {"status": "done", "gameState": self.get_game_state()}
+        yield {"status": "done", "message": "游戏开始！", "gameState": self.get_game_state()}
         
     async def process_player_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
         """处理玩家行为（V2版 - 异步）"""
@@ -76,10 +141,10 @@ class GameEngine:
         dynamic_content = await self.ai_master.generate_dynamic_content(self.game_session, action)
         self._apply_dynamic_content(dynamic_content)
 
-        if self._should_change_scene():
-            await self._change_to_next_scene()
-            # 返回新场景的状态
-            return self.get_game_state()
+        # if self._should_change_scene():
+        #     await self._change_to_next_scene()
+        #     # 返回新场景的状态
+        #     return self.get_game_state()
 
         if self._check_game_over():
             return self.get_game_state()
@@ -88,6 +153,33 @@ class GameEngine:
             evaluation = await self.ai_master.evaluate_game_state(self.game_session)
             self._apply_game_evaluation(evaluation)
             
+        return self.get_game_state()
+
+    async def process_chat_message(self, entity_id: str, message: str) -> Dict[str, Any]:
+        """处理玩家与NPC的聊天信息"""
+        if not self.game_session:
+            return {"error": "游戏未开始"}
+
+        entity = next((e for e in self.game_session.active_entities if e.id == entity_id), None)
+        if not entity:
+            return {"error": "未找到实体"}
+
+        template = self.entity_manager.entity_templates.get(entity.template_id)
+        if not template or template.entity_type != EntityType.NPC:
+            return {"error": "目标不是可聊天的NPC"}
+
+        if entity.chat_history is None:
+            entity.chat_history = []
+
+        entity.chat_history.append({"sender": "player", "message": message})
+
+        # 调用AI生成NPC回应
+        npc_response = await self.ai_master.generate_npc_dialogue(
+            self.game_session, entity, message
+        )
+        
+        entity.chat_history.append({"sender": "npc", "message": npc_response})
+
         return self.get_game_state()
         
     def get_game_state(self) -> Dict[str, Any]:
@@ -109,9 +201,17 @@ class GameEngine:
                 
                 entity_data = e.dict()
                 entity_data['image'] = template.image_path
-                entity_data['interactive'] = True
+                entity_data['description'] = template.description # Add description from template
+                # 传递具体的互动类型列表
+                # Use interactions from the instance's state if available, otherwise from the template
+                if 'interactions' in e.current_state:
+                    entity_data['interactions'] = e.current_state['interactions']
+                else:
+                    entity_data['interactions'] = [rule.interaction_type.value for rule in template.interaction_rules]
+                entity_data['interactive'] = bool(entity_data['interactions'])
 
                 if template.entity_type == EntityType.NPC:
+                    entity_data['story_background'] = template.story_background
                     entities.append(entity_data)
                 else:
                     objects.append(entity_data)
@@ -133,13 +233,9 @@ class GameEngine:
         
     def _load_assets(self):
         """加载游戏资源"""
-        with open("backend/assets/maps.json", "r", encoding="utf-8") as f:
-            maps_data = json.load(f)
-        self.map_manager.load_map_templates(maps_data)
-        
-        with open("backend/assets/entities.json", "r", encoding="utf-8") as f:
-            entities_data = json.load(f)
-        self.entity_manager.load_entity_templates(entities_data)
+        # This method is now partially handled in start_new_game to facilitate storyline generation.
+        # It can be kept for other asset loading purposes or refactored.
+        pass
         
     def _initialize_map_entities(self):
         """初始化地图上的实体"""
@@ -284,31 +380,69 @@ class GameEngine:
         return next((s for s in self.storyline.scenes if s.id == self.game_session.current_scene_id), None)
 
     async def _load_scene(self, scene: Scene):
-        """加载并初始化一个新场景 (异步)"""
+        """加载并初始化一个新场景 (V2 - 剧情驱动)"""
         yield {"status": "loading", "message": f"正在加载场景: {scene.name}..."}
         self.game_session.current_scene_id = scene.id
         self.game_session.active_entities = []
 
-        yield {"status": "loading", "message": f"AI正在为场景 '{scene.name}' 生成地图..."}
-        scene_map = await self.map_manager.generate_dynamic_map(
-            scene.map_theme, 1, scene.description
-        )
-        self.map_manager.map_templates[scene_map.id] = scene_map
-        self.map_manager.switch_to_map(scene_map.id)
-        self.game_session.current_map_id = scene_map.id
-
-        yield {"status": "loading", "message": f"AI正在为场景 '{scene.name}' 布置实体..."}
-        initial_content = await self.ai_master.generate_dynamic_content(self.game_session)
-        self._apply_dynamic_content(initial_content)
+        # 1. 根据场景主题选择一个合适的现有地图
+        yield {"status": "loading", "message": f"为场景 '{scene.name}' 选择地图..."}
+        selected_map = next((m for m in self.map_manager.map_templates.values() if m.theme == scene.map_theme), None)
         
+        if not selected_map:
+            # 如果没有找到完全匹配的，就找一个默认或随机的
+            selected_map = list(self.map_manager.map_templates.values())[0] if self.map_manager.map_templates else None
+            if not selected_map:
+                raise ValueError("没有可用的地图资源。")
+
+        self.map_manager.switch_to_map(selected_map.id)
+        self.game_session.current_map_id = selected_map.id
+
+        # 2. 使用AI为场景填充有剧情意义的实体
+        yield {"status": "loading", "message": f"AI正在为场景 '{scene.name}' 布置实体..."}
+        all_entity_templates = list(self.entity_manager.entity_templates.values())
+        scene_population = await self.ai_master.generate_scene_population(
+            self.storyline, scene, selected_map, all_entity_templates
+        )
+
+        # 3. 根据AI的规划，实例化并放置实体
+        spawn_points_map = {sp.id: sp for sp in selected_map.spawn_points}
+        for pop_entity in scene_population.entities_to_spawn:
+            template = self.entity_manager.entity_templates.get(pop_entity.template_id)
+            spawn_point = spawn_points_map.get(pop_entity.spawn_point_id)
+
+            if not template or not spawn_point:
+                print(f"警告: 无法为实体 '{pop_entity.template_id}' 找到模板或刷新点 '{pop_entity.spawn_point_id}'。")
+                continue
+
+            # 合并基础状态和AI覆盖的状态
+            initial_state = template.base_stats.copy()
+            if pop_entity.override_initial_state:
+                initial_state.update(pop_entity.override_initial_state)
+            
+            # 为实体添加剧情理由到其状态中，以便前端或后续逻辑可以访问
+            initial_state['narrative_reason'] = pop_entity.narrative_reason
+
+            entity_instance = EntityInstance(
+                template_id=template.id,
+                name=pop_entity.override_name or template.name,
+                current_state=initial_state,
+                position={
+                    "x": spawn_point.x, 
+                    "y": spawn_point.y,
+                    "width": spawn_point.width,
+                    "height": spawn_point.height
+                }
+            )
+            self.game_session.active_entities.append(entity_instance)
+
         self.game_session.story_context['current_scene_objective'] = scene.description
+        yield {"status": "loading", "message": "场景加载完成。"}
 
     def _should_change_scene(self) -> bool:
         """仅检查当前场景是否完成"""
-        current_scene = self.get_current_scene()
-        if not current_scene:
-            return False
-        return self._evaluate_condition(current_scene.completion_condition)
+        # The user will define the scene transition logic later.
+        return False
 
     async def _change_to_next_scene(self):
         """执行场景切换"""

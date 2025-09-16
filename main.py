@@ -77,6 +77,17 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 updated_state = await game_engine.process_player_action(action)
                 await manager.send_personal_message({"status": "update", "gameState": updated_state}, client_id)
 
+            elif action_type == "chat_message":
+                entity_id = data.get("entity_id")
+                message = data.get("message")
+                
+                if not game_engine.game_session:
+                    await manager.send_personal_message({"status": "error", "message": "游戏会话不存在"}, client_id)
+                    continue
+
+                updated_state = await game_engine.process_chat_message(entity_id, message)
+                await manager.send_personal_message({"status": "update", "gameState": updated_state}, client_id)
+
     except WebSocketDisconnect:
         manager.disconnect(client_id)
         print(f"客户端 #{client_id} 断开连接")
@@ -100,8 +111,8 @@ async def get_assets():
         game_engine._load_assets()
     
     return {
-        "maps": [m.dict() for m in game_engine.map_manager.map_templates.values()],
-        "entities": [e.dict() for e in game_engine.entity_manager.entity_templates.values()]
+        "maps": [m.model_dump() for m in game_engine.map_manager.map_templates.values()],
+        "entities": [e.model_dump() for e in game_engine.entity_manager.entity_templates.values()]
     }
 
 @app.post("/save_map_template")

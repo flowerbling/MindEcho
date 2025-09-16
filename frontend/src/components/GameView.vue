@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue';
 import InteractionModal from './InteractionModal.vue';
+import ChatModal from './ChatModal.vue'; // Import ChatModal
 import ClueBubble from './ClueBubble.vue';
 import ResponsiveCanvas from './ResponsiveCanvas.vue';
 import LoadingIndicator from './LoadingIndicator.vue';
@@ -16,6 +17,8 @@ const canvasDimensions = ref({ width: 0, height: 0 });
 // --- UI State ---
 const showInteractionModal = ref(false);
 const interactionTarget = ref(null);
+const showChatModal = ref(false); // State for chat modal
+const chatTarget = ref(null); // State for chat entity
 const showRulesPanel = ref(false);
 const showScenesPanel = ref(false);
 const showDebugPanel = ref(false);
@@ -29,11 +32,14 @@ const unlockedScenes = computed(() => {
 const activeRules = computed(() => gameState.value?.game_rules || []);
 const discoveredVictoryClues = computed(() => gameState.value?.discovered_victory_clues || []);
 
+const scaleFactor = computed(() => {
+  if (!canvasDimensions.value.width) return 1;
+  return canvasDimensions.value.width / 1920; // Base scaling on width
+});
+
 // --- Coordinate & Asset Handling ---
-const toPixels = (val, axis) => {
-  if (!canvasDimensions.value.width) return 0;
-  const base = axis === 'x' ? canvasDimensions.value.width : canvasDimensions.value.height;
-  return Math.round(val * base);
+const toCanvasPixels = (designValue) => {
+  return Math.round((designValue || 0) * scaleFactor.value);
 };
 const getImageUrl = (path) => {
   if (!path) return '';
@@ -100,18 +106,26 @@ const initializeGame = () => {
   });
 };
 
-const performInteraction = (target) => {
+const performInteraction = ({ target, interactionType }) => {
   loading.value = true;
   const actionPayload = { 
     type: 'interact', 
     target_id: target.id, 
-    interaction_type: 'talk',
-    details: `与 ${target.name} 互动` 
+    interaction_type: interactionType,
+    details: `与 ${target.name} 进行 ${interactionType} 互动` 
   };
   sendMessage({
     type: 'player_action',
     session_id: gameState.value.session_id,
     action: actionPayload
+  });
+};
+
+const handleSendMessage = (payload) => {
+  sendMessage({
+    type: 'chat_message',
+    entity_id: payload.entityId,
+    message: payload.message,
   });
 };
 
@@ -132,7 +146,13 @@ const changeScene = (mapId) => {
 };
 
 const handleAssetClick = (asset) => {
-  if (asset.interactive) {
+  if (!asset.interactive) return;
+
+  // Check if the asset is an NPC (entity with a story_background)
+  if (asset.story_background) {
+    chatTarget.value = asset;
+    showChatModal.value = true;
+  } else {
     interactionTarget.value = asset;
     showInteractionModal.value = true;
   }
@@ -180,7 +200,13 @@ const setGameMessage = (msg, isError = false) => {
                   :key="`obj-${index}-${obj.name}`"
                   :src="getImageUrl(obj.image)" :alt="obj.name"
                   class="scene-element"
-                  :style="{ left: `${toPixels(obj.x, 'x')}px`, top: `${toPixels(obj.y, 'y')}px`, width: `${toPixels(obj.width, 'x')}px`, height: `${toPixels(obj.height, 'y')}px`, transform: `translate(-50%, -50%) rotate(${obj.rotation || 0}deg)` }"
+                  :style="{ 
+                    left: `${toCanvasPixels(obj.position.x)}px`, 
+                    top: `${toCanvasPixels(obj.position.y)}px`, 
+                    width: `${toCanvasPixels(obj.position.width)}px`, 
+                    height: `${toCanvasPixels(obj.position.height)}px`, 
+                    transform: `translate(-50%, -50%) rotate(${obj.rotation || 0}deg)` 
+                  }"
                   @click="handleAssetClick(obj)"
                   :class="{ interactive: obj.interactive }"
                 />
@@ -189,7 +215,13 @@ const setGameMessage = (msg, isError = false) => {
                   :key="`entity-${index}-${entity.name}`"
                   :src="getImageUrl(entity.image)" :alt="entity.name"
                   class="scene-element"
-                  :style="{ left: `${toPixels(entity.x, 'x')}px`, top: `${toPixels(entity.y, 'y')}px`, width: `${toPixels(entity.width, 'x')}px`, height: `${toPixels(entity.height, 'y')}px`, transform: `translate(-50%, -50%) rotate(${entity.rotation || 0}deg)` }"
+                  :style="{ 
+                    left: `${toCanvasPixels(entity.position.x)}px`, 
+                    top: `${toCanvasPixels(entity.position.y)}px`, 
+                    width: `${toCanvasPixels(entity.position.width)}px`, 
+                    height: `${toCanvasPixels(entity.position.height)}px`, 
+                    transform: `translate(-50%, -50%) rotate(${entity.rotation || 0}deg)` 
+                  }"
                   @click="handleAssetClick(entity)"
                   :class="{ interactive: entity.interactive }"
                 />
@@ -224,6 +256,7 @@ const setGameMessage = (msg, isError = false) => {
       </transition>
 
       <InteractionModal :show="showInteractionModal" :target="interactionTarget" @close="showInteractionModal = false" @interact="performInteraction" />
+      <ChatModal :show="showChatModal" :entity="chatTarget" @close="showChatModal = false" @send-message="handleSendMessage" />
       <DebugView :show="showDebugPanel" :game-data="gameState" />
     </template>
   </div>
