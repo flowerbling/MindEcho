@@ -4,6 +4,7 @@ import InteractionModal from './InteractionModal.vue';
 import ClueBubble from './ClueBubble.vue';
 import ResponsiveCanvas from './ResponsiveCanvas.vue';
 import LoadingIndicator from './LoadingIndicator.vue';
+import DebugView from './DebugView.vue';
 
 // --- Game State Management ---
 const gameState = ref(null);
@@ -17,6 +18,7 @@ const showInteractionModal = ref(false);
 const interactionTarget = ref(null);
 const showRulesPanel = ref(false);
 const showScenesPanel = ref(false);
+const showDebugPanel = ref(false);
 
 // --- Computed Properties ---
 const currentScene = computed(() => gameState.value?.current_map);
@@ -159,6 +161,7 @@ const setGameMessage = (msg, isError = false) => {
         <div class="header-actions">
           <button @click="showScenesPanel = true">切换场景</button>
           <button @click="showRulesPanel = true">查看法则</button>
+          <button @click="showDebugPanel = !showDebugPanel">调试</button>
         </div>
       </header>
 
@@ -221,6 +224,7 @@ const setGameMessage = (msg, isError = false) => {
       </transition>
 
       <InteractionModal :show="showInteractionModal" :target="interactionTarget" @close="showInteractionModal = false" @interact="performInteraction" />
+      <DebugView :show="showDebugPanel" :game-data="gameState" />
     </template>
   </div>
 </template>
