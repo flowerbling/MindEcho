@@ -1,7 +1,7 @@
 import json # Import json for schema serialization
 from typing import Dict, List
 from langchain_core.utils.function_calling import convert_to_json_schema # Import the tool
-from backend.enhanced_models import MainStoryline, DynamicContent # Import models for schema generation
+from backend.enhanced_models import MainStoryline, DynamicContent, MapTemplate # Import models for schema generation
 
 class PromptLibrary:
     """提示词库 - 集中管理所有系统提示词"""
@@ -10,8 +10,29 @@ class PromptLibrary:
         # Generate JSON schemas for relevant models
         self.main_storyline_schema = json.dumps(convert_to_json_schema(MainStoryline), indent=2, ensure_ascii=False)
         self.dynamic_content_schema = json.dumps(convert_to_json_schema(DynamicContent), indent=2, ensure_ascii=False)
+        self.map_template_schema = json.dumps(convert_to_json_schema(MapTemplate), indent=2, ensure_ascii=False)
 
         self.prompts = {
+            "map_generation": {
+                "system": f"""
+                你是一个专业的游戏地图设计师。你的任务是根据游戏的主题、难度和故事情节，
+                设计一个有趣且符合逻辑的地图布局。
+                
+                地图应含多个刷新点（spawn_points），用于放置NPC、物品或敌人。
+                刷新点的设计应与故事情节紧密相关。
+                
+                输出格式必须是有效的JSON，符合MapTemplate模型结构。
+                JSON Schema如下:
+                {self.map_template_schema}
+                """,
+                "user_template": """
+                游戏主题: {theme}
+                难度等级: {difficulty}
+                故事情节摘要: {storyline_summary}
+                
+                请为这个场景设计一个合适的地图。
+                """
+            },
             "content_generation": {
                 "system": f"""
                 你是一个专业的游戏内容生成AI。你的任务是根据玩家的行为和当前游戏状态，
@@ -58,19 +79,23 @@ class PromptLibrary:
             
             "storyline_generation": {
                 "system": f"""
-                你是一个故事创作AI，负责生成引人入胜的游戏主线剧情。
-                考虑主题、难度和可用资源，创造一个完整的故事弧。
+                你是一个顶级的游戏编剧AI。你的任务是根据给定的主题和难度，创作一个包含多个场景(scenes)的完整游戏剧本。
+
+                **核心要求**:
+                1.  **多场景结构**: 整个故事必须被分解为至少3个逻辑连贯的场景。
+                2.  **场景目标**: 每个场景都必须有一个明确的故事描述(description)和完成条件(completion_condition)。
+                3.  **结构化条件**: 场景的`completion_condition`以及最终的`victory_condition`和`failure_conditions`必须使用结构化格式: "type:target:value" 或 "type:target"。
+                    - 例如: "player_has_item:ancient_artifact", "entity_state:gatekeeper:defeated", "clue_discovered:secret_code"。
                 
-                输出格式必须是有效的JSON，符合MainStoryline模型结构。
+                输出格式必是有效的JSON，严格符合MainStoryline模型结构。
                 JSON Schema如下:
                 {self.main_storyline_schema}
                 """,
                 "user_template": """
-                主题: {theme}
+                游戏主题: {theme}
                 难度等级: {difficulty}
-                可用地图: {available_maps}
                 
-                请生成一个完整的主线剧情。
+                请创作一个包含多个场景的完整游戏剧本。
                 """
             },
             
@@ -96,6 +121,29 @@ class PromptLibrary:
                 - 活跃实体数: {active_entities_count}
                 
                 请评估游戏状态并提供建议。
+                """
+            },
+            "rule_generation": {
+                "system": """
+                你是一个富有想象力的游戏规则设计师。你的任务是根据游戏的主题和故事背景，
+                设计出3-5条独特、有趣且能增强沉浸感的游戏规则。
+                
+                规则应该是清晰、简洁的句子。
+                
+                输出格式必须是有效的JSON：
+                {
+                    "rules": [
+                        "规则1",
+                        "规则2",
+                        "..."
+                    ]
+                }
+                """,
+                "user_template": """
+                游戏主题: {theme}
+                故事背景: {storyline_description}
+                
+                请为此游戏设计一套独特的法则。
                 """
             }
         }

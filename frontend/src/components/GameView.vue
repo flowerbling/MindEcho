@@ -3,11 +3,13 @@ import { ref, onMounted, computed } from 'vue';
 import InteractionModal from './InteractionModal.vue';
 import ClueBubble from './ClueBubble.vue';
 import ResponsiveCanvas from './ResponsiveCanvas.vue';
+import LoadingIndicator from './LoadingIndicator.vue';
 
 // --- Game State Management ---
 const gameState = ref(null);
 const loading = ref(true);
-const gameMessage = ref('');
+const loadingMessage = ref(''); // Dedicated state for loading text
+const gameMessage = ref(null); // Used for floating notifications, initialized to null
 const canvasDimensions = ref({ width: 0, height: 0 });
 
 // --- UI State ---
@@ -22,7 +24,7 @@ const unlockedScenes = computed(() => {
     if (!gameState.value) return {};
     return gameState.value.unlocked_maps;
 });
-const activeRules = computed(() => gameState.value?.active_rules || []);
+const activeRules = computed(() => gameState.value?.game_rules || []);
 const discoveredVictoryClues = computed(() => gameState.value?.discovered_victory_clues || []);
 
 // --- Coordinate & Asset Handling ---
@@ -39,79 +41,92 @@ const getImageUrl = (path) => {
   return `/assets/${path}`;
 };
 
-// --- API ---
-const API_BASE_URL = 'http://localhost:8000'; // Updated port
+// --- WebSocket API ---
+const clientId = `client_${Math.random().toString(36).substr(2, 9)}`;
+const ws = new WebSocket(`ws://localhost:8000/ws/${clientId}`);
 
-const initializeGame = async () => {
-  loading.value = true;
-  gameMessage.value = '正在生成游戏世界...';
-  try {
-    // For now, hardcode theme and difficulty for initial game start
-    const response = await fetch(`${API_BASE_URL}/start_game`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ theme: '古代遗迹', difficulty: 2 }),
-    });
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    const data = await response.json();
-    gameState.value = data; // The entire response is the game state
-    setGameMessage('游戏世界生成成功！');
-  } catch (error) {
-    setGameMessage('游戏世界生成失败: ' + error.message, true);
-  } finally {
+const sendMessage = (payload) => {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(payload));
+  } else {
+    console.error("WebSocket is not open.");
+  }
+};
+
+ws.onopen = () => {
+  console.log("WebSocket connection established.");
+  initializeGame();
+};
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Received game state:', data);
+
+  if (data.status === 'loading') {
+    loadingMessage.value = data.message;
+  } else if (data.status === 'done' || data.status === 'update') {
+    gameState.value = data.gameState;
+    if (data.status === 'done') {
+      setGameMessage('游戏世界生成成功！');
+    } else {
+      setGameMessage(data.gameState.story_context?.last_dialogue || '游戏世界已更新！');
+    }
+    loading.value = false;
+  } else if (data.status === 'error') {
+    setGameMessage('发生错误: ' + data.message, true);
     loading.value = false;
   }
 };
 
-const performInteraction = async (target) => {
+ws.onclose = () => {
+  console.log("WebSocket connection closed.");
+  setGameMessage('与服务器的连接已断开。', true);
+};
+
+ws.onerror = (error) => {
+  console.error("WebSocket error:", error);
+  setGameMessage('连接发生错误。', true);
+};
+
+const initializeGame = () => {
+  loading.value = true;
+  loadingMessage.value = '正在创建游戏...';
+  sendMessage({
+    type: 'start_game',
+    theme: '古代遗迹',
+    difficulty: 2
+  });
+};
+
+const performInteraction = (target) => {
   loading.value = true;
   const actionPayload = { 
     type: 'interact', 
     target_id: target.id, 
-    interaction_type: 'talk', // Default to talk for now, can be expanded
+    interaction_type: 'talk',
     details: `与 ${target.name} 互动` 
   };
-  try {
-    const response = await fetch(`${API_BASE_URL}/player_action`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: gameState.value.session_id, action: actionPayload }),
-    });
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    const data = await response.json();
-    gameState.value = data; // Update entire game state
-    setGameMessage(data.story_context?.last_dialogue || '互动完成。'); // Use last_dialogue for feedback
-  } catch (error) {
-    setGameMessage('执行动作失败：' + error.message, true);
-  } finally {
-    loading.value = false;
-  }
+  sendMessage({
+    type: 'player_action',
+    session_id: gameState.value.session_id,
+    action: actionPayload
+  });
 };
 
 // --- UI Logic ---
-const changeScene = async (mapId) => {
+const changeScene = (mapId) => {
   loading.value = true;
   const actionPayload = {
     type: 'move',
     target_map_id: mapId,
     details: `移动到场景: ${mapId}`
   };
-  try {
-    const response = await fetch(`${API_BASE_URL}/player_action`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: gameState.value.session_id, action: actionPayload }),
-    });
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    const data = await response.json();
-    gameState.value = data; // Update entire game state
-    setGameMessage(data.story_context?.last_dialogue || `已切换到场景: ${mapId}。`);
-  } catch (error) {
-    setGameMessage('切换场景失败：' + error.message, true);
-  } finally {
-    loading.value = false;
-    showScenesPanel.value = false;
-  }
+  sendMessage({
+    type: 'player_action',
+    session_id: gameState.value.session_id,
+    action: actionPayload
+  });
+  showScenesPanel.value = false;
 };
 
 const handleAssetClick = (asset) => {
@@ -130,12 +145,13 @@ const setGameMessage = (msg, isError = false) => {
     }, 5000);
 };
 
-onMounted(initializeGame);
+// onMounted will implicitly handle the connection setup via the script setup's top-level code.
+// initializeGame is now called by the ws.onopen event handler.
 </script>
 
 <template>
   <div class="game-view-wrapper">
-    <div v-if="loading" class="loading-overlay">正在加载...</div>
+    <LoadingIndicator v-if="loading" :message="loadingMessage" />
     
     <template v-if="gameState">
       <header class="game-header">

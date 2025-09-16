@@ -96,16 +96,25 @@ class EntityInstance(BaseModel):
         super().__init__(**data)
 
 # 游戏状态模型
+class Scene(BaseModel):
+    id: str = Field(..., description="场景的唯一标识符")
+    name: str = Field(..., description="场景的名称")
+    description: str = Field(..., description="场景的故事描述和目标")
+    map_theme: str = Field(..., description="该场景建议的地图主题")
+    completion_condition: str = Field(..., description="完成该场景并进入下一场景的条件")
+
 class GameSession(BaseModel):
     session_id: str = Field(..., description="当前游戏会话的唯一标识符")
-    current_map_id: str = Field(..., description="玩家当前所在地图的ID")
+    current_scene_id: str = Field(..., description="玩家当前所在场景的ID")
+    current_map_id: Optional[str] = Field(None, description="玩家当前所在地图的ID")
     current_phase: GamePhase = Field(..., description="当前游戏阶段")
     turn_count: int = Field(0, description="当前游戏回合数")
     player_stats: Dict[str, Any] = Field({}, description="玩家的各项属性和统计数据")
+    player_inventory: List[str] = Field([], description="玩家背包中的物品ID列表")
     active_entities: List[EntityInstance] = Field([], description="当前地图中活跃的实体实例列表")
     game_rules: List[str] = Field([], description="当前生效的游戏规则列表")
-    victory_conditions: List[str] = Field([], description="当前游戏的胜利条件列表")
-    failure_conditions: List[str] = Field([], description="当前游戏的失败条件列表")
+    victory_conditions: List[str] = Field([], description="整个游戏的最终胜利条件列表")
+    failure_conditions: List[str] = Field([], description="整个游戏的最终失败条件列表")
     story_context: Dict[str, Any] = Field({}, description="当前游戏的剧情上下文信息")
     discovered_clues: List[str] = Field([], description="玩家已发现的线索列表")
 
@@ -129,12 +138,9 @@ class MainStoryline(BaseModel):
     title: str = Field(..., description="主线剧情的标题")
     description: str = Field(..., description="主线剧情的详细描述")
     theme: str = Field(..., description="主线剧情的主题")
-    estimated_turns: int = Field(..., description="完成主线剧情的预估回合数")
-    required_maps: List[str] = Field([], description="主线剧情所需的地图ID列表")
-    key_entities: List[str] = Field([], description="主线剧情中的关键实体ID列表")
-    victory_condition: str = Field(..., description="主线剧情的胜利条件")
-    failure_conditions: List[str] = Field([], description="主线剧情的失败条件列表")
-    story_beats: List[Dict[str, Any]] = Field([], description="关键剧情节点列表，每个节点包含剧情描述和触发条件")
+    scenes: List[Scene] = Field([], description="构成主线剧情的场景列表")
+    victory_condition: str = Field(..., description="整个主线剧情的最终胜利条件")
+    failure_conditions: List[str] = Field([], description="整个主线剧情的最终失败条件列表")
 
 # AI提示词模板
 class PromptTemplate(BaseModel):

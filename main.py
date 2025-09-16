@@ -1,5 +1,5 @@
 import json # Import json for file operations
-from fastapi import FastAPI, HTTPException # Removed duplicate import
+from fastapi import FastAPI, HTTPException, BackgroundTasks # Removed duplicate import
 from pydantic import BaseModel
 from typing import Dict, Any, List
 import os
@@ -46,26 +46,43 @@ class PlayerActionRequest(BaseModel):
 class SaveMapTemplateRequest(BaseModel):
     map_template: MapTemplate
 
-@app.post("/start_game")
-async def start_game(request: NewGameRequest):
-    """开始一个新游戏"""
-    try:
-        initial_state = game_engine.start_new_game(theme=request.theme, difficulty=request.difficulty)
-        return initial_state
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"游戏初始化失败: {str(e)}")
+from fastapi import WebSocket, WebSocketDisconnect
+from backend.connection_manager import manager
+import uuid
 
-@app.post("/player_action")
-async def player_action(request: PlayerActionRequest):
-    """处理玩家行为"""
-    if not game_engine.game_session or game_engine.game_session.session_id != request.session_id:
-        raise HTTPException(status_code=404, detail="游戏会话不存在")
-    
+@app.websocket("/ws/{client_id}")
+async def websocket_endpoint(websocket: WebSocket, client_id: str):
+    await manager.connect(websocket, client_id)
     try:
-        updated_state = game_engine.process_player_action(request.action)
-        return updated_state
+        while True:
+            data = await websocket.receive_json()
+            action_type = data.get("type")
+
+            if action_type == "start_game":
+                theme = data.get("theme", "古代遗迹")
+                difficulty = data.get("difficulty", 2)
+                
+                # 流式发送加载状态
+                async for status in game_engine.start_new_game(theme, difficulty):
+                    await manager.send_personal_message(status, client_id)
+
+            elif action_type == "player_action":
+                session_id = data.get("session_id")
+                action = data.get("action")
+                
+                if not game_engine.game_session or game_engine.game_session.session_id != session_id:
+                    await manager.send_personal_message({"status": "error", "message": "游戏会话不存在"}, client_id)
+                    continue
+
+                updated_state = await game_engine.process_player_action(action)
+                await manager.send_personal_message({"status": "update", "gameState": updated_state}, client_id)
+
+    except WebSocketDisconnect:
+        manager.disconnect(client_id)
+        print(f"客户端 #{client_id} 断开连接")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"处理玩家行为失败: {str(e)}")
+        await manager.send_personal_message({"status": "error", "message": f"发生错误: {str(e)}"}, client_id)
+        manager.disconnect(client_id)
 
 @app.get("/game_state/{session_id}")
 async def get_game_state(session_id: str):

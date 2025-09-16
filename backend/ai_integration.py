@@ -1,4 +1,5 @@
 import openai
+from openai import AsyncOpenAI
 import json
 import random
 from typing import Dict, List, Any, Optional
@@ -25,14 +26,14 @@ class AIGameMaster:
     """AI游戏大师 - 负责所有AI相关的游戏逻辑"""
     
     def __init__(self, api_key: str, base_url: str, model: str = "gpt-4o"):
-        self.client = openai.OpenAI(
+        self.client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url
         )
         self.model = model
         self.conversation_history = []
         
-    def generate_dynamic_content(self, game_session: GameSession, player_action: Dict[str, Any]) -> DynamicContent:
+    async def generate_dynamic_content(self, game_session: GameSession, player_action: Optional[Dict[str, Any]] = None) -> DynamicContent:
         """根据游戏状态和玩家行为生成动态内容"""
         
         context = {
@@ -40,12 +41,12 @@ class AIGameMaster:
             "current_phase": game_session.current_phase.value,
             "turn_count": game_session.turn_count,
             "active_entities": [e.name for e in game_session.active_entities],
-            "player_action": json.dumps(player_action, ensure_ascii=False)
+            "player_action": json.dumps(player_action, ensure_ascii=False) if player_action else "无" # Handle optional player_action
         }
         prompt = prompt_library.format_user_prompt("content_generation", context)
         
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": prompt_library.get_system_prompt("content_generation")},
@@ -63,7 +64,7 @@ class AIGameMaster:
             print(f"AI内容生成错误: {e}")
             return DynamicContent()
     
-    def generate_entity_interaction(self, entity: EntityInstance, interaction_type: InteractionType, 
+    async def generate_entity_interaction(self, entity: EntityInstance, interaction_type: InteractionType, 
                                   context: Dict[str, Any]) -> Dict[str, Any]:
         """为实体生成互动响应"""
         
@@ -76,7 +77,7 @@ class AIGameMaster:
         prompt = prompt_library.format_user_prompt("entity_interaction", prompt_context)
         
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": prompt_library.get_system_prompt("entity_interaction")},
@@ -93,17 +94,16 @@ class AIGameMaster:
             print(f"实体互动生成错误: {e}")
             return {"dialogue": "...", "state_change": {}, "items_given": [], "events_triggered": []}
     
-    def generate_storyline(self, theme: str, difficulty: int, available_maps: List[str]) -> MainStoryline:
+    async def generate_storyline(self, theme: str, difficulty: int) -> MainStoryline:
         """生成主线剧情"""
         prompt_context = {
             "theme": theme,
-            "difficulty": difficulty,
-            "available_maps": ', '.join(available_maps)
+            "difficulty": difficulty
         }
         prompt = prompt_library.format_user_prompt("storyline_generation", prompt_context)
         
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": prompt_library.get_system_prompt("storyline_generation")},
@@ -114,16 +114,42 @@ class AIGameMaster:
             )
             result_content = response.choices[0].message.content
             fixed_content = fix_json(result_content)
-            print(fixed_content)
-            storyline_data = json.loads(fixed_content)
-            return MainStoryline(**storyline_data)
+            storyline = MainStoryline.model_validate_json(fixed_content)
+            print(storyline)
+            return storyline
             
         except Exception as e:
             print(f"剧情生成错误: {e}")
             # 返回默认剧情
-            return self._get_default_storyline(theme, available_maps)
+            return self._get_default_storyline(theme)
     
-    def evaluate_game_state(self, game_session: GameSession) -> Dict[str, Any]:
+    async def generate_game_rules(self, theme: str, storyline_description: str) -> List[str]:
+        """根据游戏主题和故事生成独特的规则"""
+        prompt_context = {
+            "theme": theme,
+            "storyline_description": storyline_description
+        }
+        prompt = prompt_library.format_user_prompt("rule_generation", prompt_context)
+        
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": prompt_library.get_system_prompt("rule_generation")},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=500
+            )
+            result_content = response.choices[0].message.content
+            fixed_content = fix_json(result_content)
+            rules_data = json.loads(fixed_content)
+            return rules_data.get("rules", [])
+        except Exception as e:
+            print(f"AI游戏规则生成错误: {e}")
+            return [f"在{theme}世界中，万物皆有可能。"]
+
+    async def evaluate_game_state(self, game_session: GameSession) -> Dict[str, Any]:
         """评估当前游戏状态，判断是否需要调整难度或推进剧情"""
         
         prompt_context = {
@@ -136,7 +162,7 @@ class AIGameMaster:
         prompt = prompt_library.format_user_prompt("game_evaluation", prompt_context)
         
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": prompt_library.get_system_prompt("game_evaluation")},
@@ -152,24 +178,51 @@ class AIGameMaster:
         except Exception as e:
             print(f"游戏状态评估错误: {e}")
             return {"difficulty_adjustment": 0, "story_progression": False, "new_challenges": []}
+
+    async def generate_map_layout(self, theme: str, difficulty: int, storyline_summary: str) -> MapTemplate:
+        """使用AI生成新的地图布局"""
+        prompt_context = {
+            "theme": theme,
+            "difficulty": difficulty,
+            "storyline_summary": storyline_summary
+        }
+        prompt = prompt_library.format_user_prompt("map_generation", prompt_context)
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": prompt_library.get_system_prompt("map_generation")},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.8,
+                max_tokens=2000
+            )
+            result_content = response.choices[0].message.content
+            fixed_content = fix_json(result_content)
+            map_data = json.loads(fixed_content)
+            return MapTemplate(**map_data)
+
+        except Exception as e:
+            print(f"AI地图生成错误: {e}")
+            # Fallback to a default map
+            return MapTemplate(id=f"default_{theme.lower()}", name=f"默认{theme}地图", theme=theme,
+                               description="一个由AI生成失败时提供的默认地图。",
+                               spawn_points=[SpawnPoint(id="sp_center", x=400, y=300, entity_types=["npc", "object"])])
     
-    def _get_default_storyline(self, theme: str, available_maps: List[str]) -> MainStoryline:
+    def _get_default_storyline(self, theme: str) -> MainStoryline:
         """获取默认剧情模板"""
         return MainStoryline(
             id="default_story",
             title=f"{theme}的秘密",
             description="一个神秘的冒险等待着你...",
             theme=theme,
-            estimated_turns=50,
-            required_maps=available_maps[:3] if len(available_maps) >= 3 else available_maps,
-            key_entities=["神秘向导", "守护者", "关键道具"],
-            victory_condition="找到并激活所有古代神器",
-            failure_conditions=["生命值归零", "时间耗尽"],
-            story_beats=[
-                {"turn": 10, "event": "遇到第一个关键NPC"},
-                {"turn": 25, "event": "发现重要线索"},
-                {"turn": 40, "event": "面临最终挑战"}
-            ]
+            scenes=[
+                Scene(id="scene_1", name="初始场景", description="故事的开始", map_theme=theme, completion_condition="clue_discovered:welcome"),
+                Scene(id="scene_2", name="最终挑战", description="面对最终的挑战", map_theme=f"{theme}_boss", completion_condition="entity_state:boss:defeated")
+            ],
+            victory_condition="entity_state:boss:defeated",
+            failure_conditions=["player_stat:health:le:0"]
         )
 
 
@@ -221,7 +274,7 @@ class EntityManager:
         self.active_entities[entity.id] = entity
         return entity
     
-    def handle_entity_interaction(self, entity_id: str, interaction_type: InteractionType, 
+    async def handle_entity_interaction(self, entity_id: str, interaction_type: InteractionType, 
                                 context: Dict[str, Any]) -> Dict[str, Any]:
         """处理实体互动"""
         
@@ -234,20 +287,8 @@ class EntityManager:
         if not template:
             return {"error": "实体模板不存在"}
         
-        # 检查是否有预定义的互动规则
-        matching_rule = None
-        for rule in template.interaction_rules:
-            if rule.interaction_type == interaction_type:
-                if self._check_interaction_conditions(rule, entity, context):
-                    matching_rule = rule
-                    break
-        
-        if matching_rule:
-            # 使用预定义规则
-            result = self._apply_interaction_rule(matching_rule, entity, context)
-        else:
-            # 使用AI生成互动响应
-            result = self.ai_master.generate_entity_interaction(entity, interaction_type, context)
+        # 始终使用AI生成互动响应以保证最大动态性
+        result = await self.ai_master.generate_entity_interaction(entity, interaction_type, context)
         
         # 更新实体状态
         if "state_change" in result:
@@ -337,15 +378,9 @@ class MapManager:
             template = MapTemplate(**template_data)
             self.map_templates[template.id] = template
     
-    def generate_dynamic_map(self, theme: str, difficulty: int) -> MapTemplate:
+    async def generate_dynamic_map(self, theme: str, difficulty: int, storyline_summary: str) -> MapTemplate:
         """使用AI生成动态地图"""
-        # 这里可以调用AI来生成新的地图布局
-        # 为了简化，暂时返回随机选择的现有地图
-        available_maps = [m for m in self.map_templates.values() if m.theme == theme]
-        if available_maps:
-            return random.choice(available_maps)
-        else:
-            return list(self.map_templates.values())[0] if self.map_templates else None
+        return await self.ai_master.generate_map_layout(theme, difficulty, storyline_summary)
     
     def switch_to_map(self, map_id: str) -> bool:
         """切换到指定地图"""
