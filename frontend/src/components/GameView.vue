@@ -17,12 +17,10 @@ const showRulesPanel = ref(false);
 const showScenesPanel = ref(false);
 
 // --- Computed Properties ---
-const currentScene = computed(() => gameState.value?.world_scenes[gameState.value.active_scene_key]?.instance);
+const currentScene = computed(() => gameState.value?.current_map);
 const unlockedScenes = computed(() => {
     if (!gameState.value) return {};
-    return Object.entries(gameState.value.world_scenes)
-        .filter(([, data]) => data.unlocked)
-        .reduce((obj, [key, val]) => ({ ...obj, [key]: val }), {});
+    return gameState.value.unlocked_maps;
 });
 const activeRules = computed(() => gameState.value?.active_rules || []);
 const discoveredVictoryClues = computed(() => gameState.value?.discovered_victory_clues || []);
@@ -33,20 +31,31 @@ const toPixels = (val, axis) => {
   const base = axis === 'x' ? canvasDimensions.value.width : canvasDimensions.value.height;
   return Math.round(val * base);
 };
-const getImageUrl = (path) => path ? `/assets/${path}` : '';
+const getImageUrl = (path) => {
+  if (!path) return '';
+  // The backend provides paths like "backgrounds/image.png"
+  // The frontend serves static assets from /public/assets/
+  // So, we just need to prepend /assets/
+  return `/assets/${path}`;
+};
 
 // --- API ---
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'http://localhost:8000'; // Updated port
 
 const initializeGame = async () => {
   loading.value = true;
   gameMessage.value = '正在生成游戏世界...';
   try {
-    const response = await fetch(`${API_BASE_URL}/game/init`);
+    // For now, hardcode theme and difficulty for initial game start
+    const response = await fetch(`${API_BASE_URL}/start_game`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme: '古代遗迹', difficulty: 2 }),
+    });
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     const data = await response.json();
-    gameState.value = data.initial_state;
-    setGameMessage(data.message);
+    gameState.value = data; // The entire response is the game state
+    setGameMessage('游戏世界生成成功！');
   } catch (error) {
     setGameMessage('游戏世界生成失败: ' + error.message, true);
   } finally {
@@ -56,19 +65,22 @@ const initializeGame = async () => {
 
 const performInteraction = async (target) => {
   loading.value = true;
-  const actionPayload = { type: 'Interact', target: target.name, details: '点击' };
+  const actionPayload = { 
+    type: 'interact', 
+    target_id: target.id, 
+    interaction_type: 'talk', // Default to talk for now, can be expanded
+    details: `与 ${target.name} 互动` 
+  };
   try {
-    const response = await fetch(`${API_BASE_URL}/game/action`, {
+    const response = await fetch(`${API_BASE_URL}/player_action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(actionPayload),
+      body: JSON.stringify({ session_id: gameState.value.session_id, action: actionPayload }),
     });
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     const data = await response.json();
-    gameState.value.world_scenes[gameState.value.active_scene_key].instance = data.active_scene;
-    gameState.value.active_rules = data.active_rules;
-    gameState.value.discovered_victory_clues = data.discovered_victory_clues;
-    setGameMessage(data.ai_response.ai_response_to_player);
+    gameState.value = data; // Update entire game state
+    setGameMessage(data.story_context?.last_dialogue || '互动完成。'); // Use last_dialogue for feedback
   } catch (error) {
     setGameMessage('执行动作失败：' + error.message, true);
   } finally {
@@ -77,11 +89,29 @@ const performInteraction = async (target) => {
 };
 
 // --- UI Logic ---
-const changeScene = (sceneKey) => {
-    if (gameState.value?.world_scenes[sceneKey]?.unlocked) {
-        gameState.value.active_scene_key = sceneKey;
-        showScenesPanel.value = false;
-    }
+const changeScene = async (mapId) => {
+  loading.value = true;
+  const actionPayload = {
+    type: 'move',
+    target_map_id: mapId,
+    details: `移动到场景: ${mapId}`
+  };
+  try {
+    const response = await fetch(`${API_BASE_URL}/player_action`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: gameState.value.session_id, action: actionPayload }),
+    });
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const data = await response.json();
+    gameState.value = data; // Update entire game state
+    setGameMessage(data.story_context?.last_dialogue || `已切换到场景: ${mapId}。`);
+  } catch (error) {
+    setGameMessage('切换场景失败：' + error.message, true);
+  } finally {
+    loading.value = false;
+    showScenesPanel.value = false;
+  }
 };
 
 const handleAssetClick = (asset) => {

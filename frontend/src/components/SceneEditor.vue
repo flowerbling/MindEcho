@@ -11,13 +11,19 @@ const DESIGN_WIDTH = 1920;
 const DESIGN_HEIGHT = 1080;
 
 // --- State Management ---
-const sceneLayouts = ref(null);
-const assetLibrary = ref({ subjects: [] });
+const maps = ref({}); // To store map templates
+const entities = ref([]); // To store entity templates
+const sceneLayouts = computed(() => maps.value); // sceneLayouts will be derived from maps
+const assetLibrary = computed(() => ({ subjects: entities.value })); // assetLibrary will be derived from entities
 const selectedSpawnPoint = ref(null);
 const sceneKey = ref(route.params.sn);
 const isDragging = ref(false);
 const dragOffset = ref({ x: 0, y: 0 });
 const canvasDimensions = ref({ width: 0, height: 0 });
+
+watch(canvasDimensions, (newVal) => {
+  console.log('Canvas dimensions updated:', newVal);
+});
 
 // --- Computed Properties ---
 const scene = computed(() => sceneLayouts.value?.[sceneKey.value]);
@@ -39,12 +45,28 @@ const toRelative = (val, axis) => {
 // --- API Communication ---
 const fetchData = async () => {
   try {
-    const [layoutsRes, libraryRes] = await Promise.all([
-      fetch('http://localhost:8000/api/scene_layouts'),
-      fetch('http://localhost:8000/api/asset_library')
-    ]);
-    sceneLayouts.value = await layoutsRes.json();
-    assetLibrary.value = await libraryRes.json();
+    const response = await fetch('http://localhost:8000/assets');
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const data = await response.json();
+    
+    // Populate maps and entities
+    maps.value = data.maps.reduce((acc, map) => {
+      // Convert absolute spawn point coordinates and dimensions to relative
+      const convertedMap = {
+        ...map,
+        spawn_points: map.spawn_points.map(sp => ({
+          ...sp,
+          x: sp.x / map.width, // Convert to relative X
+          y: sp.y / map.height, // Convert to relative Y
+          width: sp.width / map.width, // Convert to relative width
+          height: sp.height / map.height, // Convert to relative height
+        }))
+      };
+      acc[map.id] = convertedMap; // Assuming map.id is the key
+      return acc;
+    }, {});
+    entities.value = data.entities;
+
     if (!scene.value) {
       alert('场景不存在！');
       router.push('/m');
@@ -53,30 +75,81 @@ const fetchData = async () => {
 };
 
 const saveSceneLayouts = async () => {
+  if (!scene.value) {
+    alert('没有可保存的场景。');
+    return;
+  }
+
+  // Prepare the MapTemplate object to send to the backend
+  const mapTemplateToSave = {
+    id: scene.value.id,
+    name: scene.value.name,
+    description: scene.value.description || '',
+    background_image: scene.value.background_image,
+    width: DESIGN_WIDTH, // Send design width
+    height: DESIGN_HEIGHT, // Send design height
+    theme: scene.value.theme || '未知',
+    difficulty_level: scene.value.difficulty_level || 1,
+    spawn_points: (scene.value.spawn_points || []).map(sp => ({ // Ensure spawn_points is an array
+      id: String(sp.id), // Ensure ID is string
+      x: parseFloat(sp.x), // Ensure float
+      y: parseFloat(sp.y), // Ensure float
+      width: parseFloat(sp.width), // Ensure float
+      height: parseFloat(sp.height), // Ensure float
+      rotation: parseFloat(sp.rotation || 0.0), // Ensure float, default to 0.0
+      spawn_type: sp.spawn_type || 'random', // Default if not set, ensure uppercase for Enum
+      entity_types: (sp.subjects_config || []).map(sc => entities.value.find(e => e.name === sc.name)?.entity_type).filter(Boolean), // Extract entity_type from subjects_config
+      spawn_conditions: sp.spawn_conditions || {},
+      spawn_probability: parseFloat(sp.spawn_probability || 0.5), // Ensure float, default to 0.5
+      max_spawns: parseInt(sp.max_spawns || 1), // Ensure int, default to 1
+      cooldown_turns: parseInt(sp.cooldown_turns || 0), // Ensure int, default to 0
+    })),
+    connections: scene.value.connections || [], // Ensure connections is an array
+  };
+
   try {
-    await fetch('http://localhost:8000/api/scene_layouts', {
+    const response = await fetch('http://localhost:8000/save_map_template', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(sceneLayouts.value),
+      body: JSON.stringify({ map_template: mapTemplateToSave }),
     });
-    alert('场景配置保存成功！');
-  } catch (error) { console.error('Error saving scene layouts:', error); alert('保存失败。'); }
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || '保存失败');
+    alert(result.message);
+  } catch (error) {
+    console.error('Error saving scene layouts:', error);
+    alert('保存失败: ' + error.message);
+  }
 };
 
 // --- Spawn Point Management ---
 const addSpawnPoint = (event) => {
   if (!scene.value) return;
   const rect = event.currentTarget.getBoundingClientRect();
+  
+  // Default size for new spawn points in pixels
+  const defaultPixelWidth = 50;
+  const defaultPixelHeight = 50;
+
   const newPoint = {
     id: Date.now(),
     x: toRelative(event.clientX - rect.left, 'x'),
     y: toRelative(event.clientY - rect.top, 'y'),
-    width: 100 / DESIGN_WIDTH,
-    height: 100 / DESIGN_HEIGHT,
+    width: toRelative(defaultPixelWidth, 'x'), // Convert pixel width to relative
+    height: toRelative(defaultPixelHeight, 'y'), // Convert pixel height to relative
     rotation: 0,
     subjects_config: [],
     previewingSubjectName: null,
+    spawn_type: 'random', // Default spawn type
+    entity_types: [], // Default empty entity types
+    spawn_conditions: {},
+    spawn_probability: 0.5,
+    max_spawns: 1,
+    cooldown_turns: 0,
   };
+  if (!scene.value.spawn_points) {
+    scene.value.spawn_points = [];
+  }
   scene.value.spawn_points.push(newPoint);
   selectSpawnPoint(newPoint);
 };
@@ -131,7 +204,7 @@ const togglePreview = (point, subjectConfig) => {
   point.previewingSubjectName = point.previewingSubjectName === subjectConfig.name ? null : subjectConfig.name;
 };
 
-const getSubjectFilePath = (name) => assetLibrary.value.subjects.find(s => s.name === name)?.file_path;
+const getSubjectFilePath = (name) => entities.value.find(e => e.name === name)?.image_path;
 
 onMounted(fetchData);
 </script>
@@ -142,7 +215,7 @@ onMounted(fetchData);
       <div
         v-if="scene && scene.background_image"
         class="scene-background"
-        :style="{ backgroundImage: `url(/assets/${scene.background_image})` }"
+:style="{ backgroundImage: `url(/assets/${scene.background_image})` }"
         @click.self="addSpawnPoint"
         @mousemove="onDrag"
         @mouseup="stopDrag"
@@ -176,7 +249,7 @@ onMounted(fetchData);
               transform: `translate(-50%, -50%) rotate(${getSubjectConfig(point, point.previewingSubjectName).rotation}deg)`
             }"
           >
-            <img :src="`/assets/${getSubjectFilePath(point.previewingSubjectName)}`" :alt="point.previewingSubjectName" />
+<img :src="`/assets/${getSubjectFilePath(point.previewingSubjectName)}`" :alt="point.previewingSubjectName" />
           </div>
         </template>
       </div>
@@ -184,7 +257,7 @@ onMounted(fetchData);
 
     <div class="controls-panel">
       <router-link to="/m" class="back-button">返回</router-link>
-      <h2 v-if="scene">编辑: {{ sceneKey }}</h2>
+<h2 v-if="scene">编辑: {{ scene.name }}</h2>
       <button @click="saveSceneLayouts" class="save-button">保存</button>
 
       <div v-if="selectedSpawnPoint">
@@ -200,7 +273,7 @@ onMounted(fetchData);
         <div v-for="subject in subjects" :key="subject.name" class="subject-config-item">
           <div class="subject-main">
             <input type="checkbox" :id="`toggle-${subject.name}`" :checked="!!getSubjectConfig(selectedSpawnPoint, subject.name)" @change="toggleSubjectForSpawnPoint(selectedSpawnPoint, subject.name)"/>
-            <img :src="`/assets/${subject.file_path}`" class="subject-preview" :alt="subject.name" />
+<img :src="`/assets/${subject.image_path}`" class="subject-preview" :alt="subject.name" />
             <label :for="`toggle-${subject.name}`">{{ subject.name }}</label>
             <button v-if="getSubjectConfig(selectedSpawnPoint, subject.name)" @click="togglePreview(selectedSpawnPoint, getSubjectConfig(selectedSpawnPoint, subject.name))" class="preview-btn">
               {{ selectedSpawnPoint.previewingSubjectName === subject.name ? '取消' : '预览' }}

@@ -1,0 +1,173 @@
+[
+  {
+    "id": "map_ancient_ruins_01",
+    "name": "沉没神殿",
+    "description": "一座被遗忘的古代神殿，充满了神秘的能量和危险的陷阱。",
+    "background_image": "backgrounds/sunken_temple.png",
+    "width": 1920,
+    "height": 1080,
+    "theme": "古代遗迹",
+    "difficulty_level": 2,
+    "spawn_points": [
+      {
+        "id": "sp_ruins_entrance",
+        "x": 100.0,
+        "y": 400.0,
+        "width": 100.0,
+        "height": 100.0,
+        "rotation": 0.0,
+        "spawn_type": "random",
+        "entity_types": [],
+        "spawn_conditions": {},
+        "spawn_probability": 1.0,
+        "max_spawns": 1,
+        "cooldown_turns": 0
+      },
+      {
+        "id": "sp_ruins_altar",
+        "x": 600.0,
+        "y": 200.0,
+        "width": 100.0,
+        "height": 100.0,
+        "rotation": 0.0,
+        "spawn_type": "conditional",
+        "entity_types": [],
+        "spawn_conditions": {
+          "game_phase": "exploration"
+        },
+        "spawn_probability": 0.8,
+        "max_spawns": 2,
+        "cooldown_turns": 0
+      }
+    ],
+    "connections": [
+      "map_crystal_caves_01"
+    ]
+  },
+  {
+    "id": "map_crystal_caves_01",
+    "name": "水晶洞窟",
+    "description": "一个闪烁着奇异光芒的洞穴，墙壁上长满了巨大的水晶。",
+    "background_image": "backgrounds/crystal_caves.png",
+    "width": 1920,
+    "height": 1080,
+    "theme": "神秘洞穴",
+    "difficulty_level": 3,
+    "spawn_points": [
+      {
+        "id": "sp_caves_pool",
+        "x": 300.0,
+        "y": 500.0,
+        "width": 100.0,
+        "height": 100.0,
+        "rotation": 0.0,
+        "spawn_type": "random",
+        "entity_types": [
+          "npc",
+          "object"
+        ],
+        "spawn_conditions": {},
+        "spawn_probability": 0.6,
+        "max_spawns": 3,
+        "cooldown_turns": 0
+      },
+      {
+        "id": "sp_caves_exit",
+        "x": 900.0,
+        "y": 100.0,
+        "width": 100.0,
+        "height": 100.0,
+        "rotation": 0.0,
+        "spawn_type": "story_driven",
+        "entity_types": [
+          "object"
+        ],
+        "spawn_conditions": {
+          "map_fragment_collected": true
+        },
+        "spawn_probability": 1.0,
+        "max_spawns": 1,
+        "cooldown_turns": 0
+      }
+    ],
+    "connections": [
+      "map_ancient_ruins_01",
+      "map_cyber_city_01"
+    ]
+  },
+  {
+    "id": "map_cyber_city_01",
+    "name": "赛博都市",
+    "description": "一个充满霓虹灯和高科技的未来城市，但也隐藏着黑暗的秘密。",
+    "background_image": "backgrounds/cyber_city.png",
+    "width": 1920,
+    "height": 1080,
+    "theme": "现代都市",
+    "difficulty_level": 4,
+    "spawn_points": [
+      {
+        "id": "sp_city_market",
+        "x": 700.0,
+        "y": 600.0,
+        "width": 100.0,
+        "height": 100.0,
+        "rotation": 0.0,
+        "spawn_type": "random",
+        "entity_types": [],
+        "spawn_conditions": {},
+        "spawn_probability": 0.9,
+        "max_spawns": 5,
+        "cooldown_turns": 0
+      },
+      {
+        "id": "sp_city_data_center",
+        "x": 200.0,
+        "y": 150.0,
+        "width": 100.0,
+        "height": 100.0,
+        "rotation": 0.0,
+        "spawn_type": "conditional",
+        "entity_types": [],
+        "spawn_conditions": {
+          "power_restored": false
+        },
+        "spawn_probability": 0.7,
+        "max_spawns": 1,
+        "cooldown_turns": 0
+      }
+    ],
+    "connections": [
+      "map_crystal_caves_01",
+      "map_floating_islands_01"
+    ]
+  },
+  {
+    "id": "map_floating_islands_01",
+    "name": "浮空群岛",
+    "description": "漂浮在云海之上的神秘岛屿，古老的文明遗迹散落其间。",
+    "background_image": "backgrounds/floating_islands.png",
+    "width": 1920,
+    "height": 1080,
+    "theme": "奇幻天空",
+    "difficulty_level": 5,
+    "spawn_points": [
+      {
+        "id": "sp_sky_temple",
+        "x": 500.0,
+        "y": 300.0,
+        "width": 100.0,
+        "height": 100.0,
+        "rotation": 0.0,
+        "spawn_type": "story_driven",
+        "entity_types": [],
+        "spawn_conditions": {},
+        "spawn_probability": 1.0,
+        "max_spawns": 1,
+        "cooldown_turns": 0
+      }
+    ],
+    "connections": [
+      "map_cyber_city_01"
+    ]
+  }
+]

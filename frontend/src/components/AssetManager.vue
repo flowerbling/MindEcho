@@ -4,13 +4,19 @@ import { useRouter } from 'vue-router';
 import AssetLibraryModal from './AssetLibraryModal.vue';
 
 const router = useRouter();
-const sceneLayouts = ref({});
+const sceneLayouts = ref({}); // This will store the maps fetched from the backend
 const showAssetLibrary = ref(false);
 
 const fetchSceneLayouts = async () => {
   try {
-    const response = await fetch('http://localhost:8000/api/scene_layouts');
-    sceneLayouts.value = await response.json();
+    const response = await fetch('http://localhost:8000/assets');
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const data = await response.json();
+    // Convert the array of maps into an object keyed by map.id for easier lookup
+    sceneLayouts.value = data.maps.reduce((acc, map) => {
+      acc[map.id] = map;
+      return acc;
+    }, {});
   } catch (error) {
     console.error('Error fetching scene layouts:', error);
   }
@@ -21,38 +27,13 @@ const editScene = (sceneName) => {
 };
 
 const addNewScene = () => {
-  const newSceneName = prompt('请输入新场景的名称:', `scene_${Object.keys(sceneLayouts.value).length + 1}`);
-  if (newSceneName && !sceneLayouts.value[newSceneName]) {
-    sceneLayouts.value[newSceneName] = {
-      background_image: "", // User should set this in the editor
-      spawn_points: []
-    };
-    // Immediately save the new scene structure
-    saveSceneLayouts();
-  } else if (newSceneName) {
-    alert('场景名称已存在！');
-  }
+  alert('新建场景功能暂未实现，请联系后端开发人员。');
+  // TODO: Implement actual add new scene functionality via backend API if available
 };
 
 const deleteScene = (sceneName) => {
-    if (confirm(`确定要删除场景 "${sceneName}" 吗？此操作将删除其所有配置。`)) {
-        delete sceneLayouts.value[sceneName];
-        saveSceneLayouts();
-    }
-}
-
-const saveSceneLayouts = async () => {
-  try {
-    await fetch('http://localhost:8000/api/scene_layouts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(sceneLayouts.value),
-    });
-    // No alert needed for background saves, or could be a subtle notification
-  } catch (error) {
-    console.error('Error saving scene layouts:', error);
-    alert('自动保存新场景失败。');
-  }
+  alert('删除场景功能暂未实现，请联系后端开发人员。');
+  // TODO: Implement actual delete scene functionality via backend API if available
 };
 
 
@@ -71,9 +52,9 @@ onMounted(fetchSceneLayouts);
 
     <div class="scene-list">
       <div v-for="(scene, name) in sceneLayouts" :key="name" class="scene-card">
-        <img :src="scene.background_image ? `/assets/${scene.background_image}` : '/assets/placeholder.png'" class="scene-thumbnail" alt="Scene preview"/>
+<img :src="scene.background_image ? `/assets/${scene.background_image}` : '/assets/placeholder.png'" class="scene-thumbnail" alt="Scene preview"/>
         <div class="scene-info">
-          <h3>{{ name }}</h3>
+<h3>{{ scene.name }}</h3>
           <p>{{ scene.spawn_points?.length || 0 }} 个刷新点</p>
         </div>
         <div class="scene-actions">

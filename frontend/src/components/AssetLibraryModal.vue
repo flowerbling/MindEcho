@@ -6,19 +6,24 @@ const props = defineProps({
 });
 const emit = defineEmits(['close']);
 
-const assetTypes = ['backgrounds', 'objects', 'entities'];
-const selectedType = ref('backgrounds');
-const assets = ref([]);
+const assetTypes = ['maps', 'entities']; // Adjusted to match backend's /assets response
+const selectedType = ref('maps');
+const allAssets = ref({ maps: [], entities: [] }); // Store all fetched assets
+const displayedAssets = ref([]); // Assets filtered by selectedType
 const fileToUpload = ref(null);
 
 const fetchAssets = async () => {
   try {
-    const response = await fetch(`http://localhost:8000/api/assets/list/${selectedType.value}`);
+    const response = await fetch(`http://localhost:8000/assets`);
     if (!response.ok) throw new Error('Failed to fetch assets');
-    assets.value = await response.json();
+    const data = await response.json();
+    allAssets.value.maps = data.maps;
+    allAssets.value.entities = data.entities;
+    // Filter assets based on selectedType
+    displayedAssets.value = allAssets.value[selectedType.value] || [];
   } catch (error) {
-    console.error(`Error fetching ${selectedType.value}:`, error);
-    alert(`加载 ${selectedType.value} 素材失败。`);
+    console.error(`Error fetching all assets:`, error);
+    alert(`加载素材失败。`);
   }
 };
 
@@ -27,53 +32,18 @@ const handleFileChange = (event) => {
 };
 
 const uploadAsset = async () => {
-  if (!fileToUpload.value) {
-    alert('请先选择一个文件。');
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append('file', fileToUpload.value);
-
-  try {
-    const response = await fetch(`http://localhost:8000/api/upload/${selectedType.value}`, {
-      method: 'POST',
-      body: formData,
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.detail || 'Upload failed');
-    alert('上传成功！');
-    fileToUpload.value = null;
-    document.getElementById('file-upload-input').value = '';
-    fetchAssets(); // Refresh the list
-  } catch (error) {
-    console.error('Error uploading file:', error);
-    alert(`上传失败: ${error.message}`);
-  }
+  alert('上传素材功能暂未实现，请联系后端开发人员。');
+  // TODO: Implement actual upload functionality via backend API if available
 };
 
 const deleteAsset = async (filename) => {
-  if (!confirm(`确定要删除文件 "${filename}" 吗？此操作不可撤销。`)) {
-    return;
-  }
-
-  try {
-    const response = await fetch(`http://localhost:8000/api/delete/asset/${selectedType.value}/${filename}`, {
-      method: 'DELETE',
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.detail || 'Delete failed');
-    alert('删除成功！');
-    fetchAssets(); // Refresh the list
-  } catch (error) {
-    console.error('Error deleting file:', error);
-    alert(`删除失败: ${error.message}`);
-  }
+  alert('删除素材功能暂未实现，请联系后端开发人员。');
+  // TODO: Implement actual delete functionality via backend API if available
 };
 
 const selectAssetType = (type) => {
   selectedType.value = type;
-  fetchAssets();
+  displayedAssets.value = allAssets.value[selectedType.value] || [];
 };
 
 onMounted(() => {
@@ -105,12 +75,12 @@ onMounted(() => {
       </div>
 
       <div class="asset-grid">
-        <div v-for="asset in assets" :key="asset" class="asset-item">
-          <img :src="`/assets/${selectedType}/${asset}`" :alt="asset" class="preview-image" />
-          <p class="asset-name">{{ asset }}</p>
-          <button class="delete-button" @click="deleteAsset(asset)">删除</button>
+<div v-for="asset in displayedAssets" :key="asset.id" class="asset-item">
+<img :src="`/assets/${selectedType === 'maps' ? asset.background_image : asset.image_path}`" :alt="asset.name" class="preview-image" />
+          <p class="asset-name">{{ asset.name }}</p>
+          <button class="delete-button" @click="deleteAsset(asset.id)">删除</button>
         </div>
-        <p v-if="assets.length === 0">该分类下没有素材。</p>
+        <p v-if="displayedAssets.length === 0">该分类下没有素材。</p>
       </div>
     </div>
   </div>

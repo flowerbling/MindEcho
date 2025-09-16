@@ -1,272 +1,134 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-import uvicorn
-import json
-from typing import Dict, List
+import json # Import json for file operations
+from fastapi import FastAPI, HTTPException # Removed duplicate import
+from pydantic import BaseModel
+from typing import Dict, Any, List
 import os
-import shutil
-import random
+from fastapi.middleware.cors import CORSMiddleware # Import CORS middleware
 
-from backend.models import PlayerAction, GameStateInput, NewRule, GameStateUpdates, AIResponse, CurrentScene, SceneObject, SceneEntity
-from backend.game_logic import game_state, generate_ai_response
+# 导入新的游戏引擎和模型
+from backend.game_engine import GameEngine
+from backend.enhanced_models import GameConfig, MapTemplate # Import MapTemplate
+
+# 从环境变量或配置文件中获取API密钥和URL
+API_KEY = os.getenv("OPENAI_API_KEY", "sk-XpwEM1Np8oLFlEKB755445CcF06c422290F1D0D6A021977b")
+BASE_URL = os.getenv("OPENAI_BASE_URL", "https://oneapi.huacemedia.com/v1")
 
 app = FastAPI()
 
-# --- Constants ---
-ASSET_LIBRARY_FILE = "backend/asset_library.json"
-SCENE_LAYOUTS_FILE = "backend/scene_layouts.json"
-ASSETS_BASE_DIR = "frontend/public/assets"
-BACKGROUNDS_DIR = os.path.join(ASSETS_BASE_DIR, "backgrounds")
-OBJECTS_DIR = os.path.join(ASSETS_BASE_DIR, "objects")
-ENTITIES_DIR = os.path.join(ASSETS_BASE_DIR, "entities")
+# Configure CORS
+origins = [
+    "http://localhost",
+    "http://localhost:5173",  # Assuming your frontend runs on port 5173
+    "http://127.0.0.1:5173",
+]
 
-
-# --- Middleware ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- Ensure asset directories exist ---
-os.makedirs(BACKGROUNDS_DIR, exist_ok=True)
-os.makedirs(OBJECTS_DIR, exist_ok=True)
-os.makedirs(ENTITIES_DIR, exist_ok=True)
+# 初始化游戏引擎
+game_config = GameConfig()
+game_engine = GameEngine(config=game_config, api_key=API_KEY, base_url=BASE_URL)
 
+class NewGameRequest(BaseModel):
+    theme: str
+    difficulty: int
 
-# --- Asset Management APIs ---
+class PlayerActionRequest(BaseModel):
+    session_id: str
+    action: Dict[str, Any]
 
-@app.get("/api/asset_library")
-async def get_asset_library():
+# New request model for saving map templates
+class SaveMapTemplateRequest(BaseModel):
+    map_template: MapTemplate
+
+@app.post("/start_game")
+async def start_game(request: NewGameRequest):
+    """开始一个新游戏"""
     try:
-        with open(ASSET_LIBRARY_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Asset library file not found.")
-
-@app.post("/api/asset_library")
-async def save_asset_library(library: Dict):
-    try:
-        with open(ASSET_LIBRARY_FILE, "w", encoding="utf-8") as f:
-            json.dump(library, f, indent=2, ensure_ascii=False)
-        return {"message": "Asset library saved successfully."}
+        initial_state = game_engine.start_new_game(theme=request.theme, difficulty=request.difficulty)
+        return initial_state
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"游戏初始化失败: {str(e)}")
 
-@app.get("/api/scene_layouts")
-async def get_scene_layouts():
-    try:
-        with open(SCENE_LAYOUTS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Scene layouts file not found.")
-
-@app.post("/api/scene_layouts")
-async def save_scene_layouts(layouts: Dict):
-    try:
-        with open(SCENE_LAYOUTS_FILE, "w", encoding="utf-8") as f:
-            json.dump(layouts, f, indent=2, ensure_ascii=False)
-        return {"message": "Scene layouts saved successfully."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/assets/list/{asset_type}")
-async def list_assets(asset_type: str) -> List[str]:
-    dir_map = {
-        "backgrounds": BACKGROUNDS_DIR,
-        "objects": OBJECTS_DIR,
-        "entities": ENTITIES_DIR
-    }
-    target_dir = dir_map.get(asset_type)
-    if not target_dir or not os.path.isdir(target_dir):
-        raise HTTPException(status_code=404, detail="Invalid asset type.")
-    
-    allowed_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.mp4'}
+@app.post("/player_action")
+async def player_action(request: PlayerActionRequest):
+    """处理玩家行为"""
+    if not game_engine.game_session or game_engine.game_session.session_id != request.session_id:
+        raise HTTPException(status_code=404, detail="游戏会话不存在")
     
     try:
-        files = os.listdir(target_dir)
-        return [
-            f for f in files 
-            if os.path.isfile(os.path.join(target_dir, f)) 
-            and os.path.splitext(f)[1].lower() in allowed_extensions
-            and not f.startswith('.')
-        ]
+        updated_state = game_engine.process_player_action(request.action)
+        return updated_state
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"处理玩家行为失败: {str(e)}")
 
-@app.post("/api/upload/{asset_type}")
-async def upload_asset(asset_type: str, file: UploadFile = File(...)):
-    dir_map = {
-        "backgrounds": BACKGROUNDS_DIR,
-        "objects": OBJECTS_DIR,
-        "entities": ENTITIES_DIR
-    }
-    upload_dir = dir_map.get(asset_type)
-    if not upload_dir:
-        raise HTTPException(status_code=400, detail="Invalid asset type for upload.")
-
-    file_path = os.path.join(upload_dir, file.filename)
+@app.get("/game_state/{session_id}")
+async def get_game_state(session_id: str):
+    """获取当前游戏状态"""
+    if not game_engine.game_session or game_engine.game_session.session_id != session_id:
+        raise HTTPException(status_code=404, detail="游戏会话不存在")
     
-    if os.path.exists(file_path):
-        raise HTTPException(status_code=409, detail=f"File '{file.filename}' already exists.")
+    return game_engine.get_game_state()
 
-    try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        return {"message": f"File '{file.filename}' uploaded successfully to {asset_type}."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Could not upload file: {e}")
-
-@app.delete("/api/delete/asset/{asset_type}/{filename}")
-async def delete_asset(asset_type: str, filename: str):
-    dir_map = {
-        "backgrounds": BACKGROUNDS_DIR,
-        "objects": OBJECTS_DIR,
-        "entities": ENTITIES_DIR
+@app.get("/assets")
+async def get_assets():
+    """获取所有游戏资产 (地图, 实体)"""
+    if not game_engine.map_manager.map_templates or not game_engine.entity_manager.entity_templates:
+        # 确保资产已加载
+        game_engine._load_assets()
+    
+    return {
+        "maps": [m.dict() for m in game_engine.map_manager.map_templates.values()],
+        "entities": [e.dict() for e in game_engine.entity_manager.entity_templates.values()]
     }
-    target_dir = dir_map.get(asset_type)
-    if not target_dir:
-        raise HTTPException(status_code=400, detail="Invalid asset type.")
 
-    file_path = os.path.join(target_dir, filename)
-
-    if not os.path.isfile(file_path):
-        raise HTTPException(status_code=404, detail="File not found.")
-
+@app.post("/save_map_template")
+async def save_map_template(request: SaveMapTemplateRequest):
+    """保存地图模板"""
     try:
-        os.remove(file_path)
-        return {"message": f"File '{filename}' deleted successfully."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Could not delete file: {e}")
-
-
-# --- Game Logic APIs ---
-
-def generate_scene_instance(scene_name, scene_layout, library):
-    """Helper function to generate a single scene instance."""
-    spawned_objects = []
-    spawned_entities = []
-    subjects_map = {s['name']: s for s in library['subjects']}
-
-    for sp in scene_layout.get("spawn_points", []):
-        if not sp.get("subjects_config") or not sp["subjects_config"]:
-            continue
+        maps_file_path = "backend/assets/maps.json"
         
-        chosen_subject_config = random.choice(sp["subjects_config"])
-        subject_name = chosen_subject_config["name"]
+        # Read existing maps
+        if os.path.exists(maps_file_path):
+            with open(maps_file_path, "r", encoding="utf-8") as f:
+                existing_maps_data = json.load(f)
+        else:
+            existing_maps_data = []
+
+        # Convert existing maps to MapTemplate objects for easier manipulation
+        existing_maps = [MapTemplate(**m) for m in existing_maps_data]
+
+        # Find and update the map, or add if new
+        updated = False
+        for i, m in enumerate(existing_maps):
+            if m.id == request.map_template.id:
+                existing_maps[i] = request.map_template
+                updated = True
+                break
+        if not updated:
+            existing_maps.append(request.map_template)
         
-        if subject_name in subjects_map:
-            subject_template = subjects_map[subject_name]
-            is_entity = 'entities/' in subject_template['file_path']
-            
-            instance = {
-                "name": subject_name,
-                "image": subject_template['file_path'],
-                "state": "default",
-                "x": sp['x'],
-                "y": sp['y'],
-                "width": chosen_subject_config['width'],
-                "height": chosen_subject_config['height'],
-                "rotation": chosen_subject_config['rotation'],
-                "interactive": True
-            }
-            
-            if is_entity:
-                instance["behavior"] = "idle"
-                spawned_entities.append(instance)
-            else:
-                spawned_objects.append(instance)
+        # Write updated maps back to file
+        with open(maps_file_path, "w", encoding="utf-8") as f:
+            json.dump([m.dict() for m in existing_maps], f, indent=2, ensure_ascii=False)
+        
+        # Reload assets in game engine to reflect changes
+        game_engine._load_assets()
 
-    return {
-        "name": scene_name,
-        "background_image": scene_layout["background_image"],
-        "description": f"你来到了 {scene_name}。",
-        "objects": spawned_objects,
-        "entities": spawned_entities
-    }
+        return {"message": f"地图模板 '{request.map_template.name}' 保存成功！"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"保存地图模板失败: {str(e)}")
 
-@app.get("/game/init")
-async def init_game():
-    """
-    Initializes a new game world with all scenes pre-generated.
-    """
-    global game_state
+@app.get("/")
+async def root():
+    return {"message": "欢迎来到MindEcho动态游戏引擎"}
 
-    try:
-        with open(SCENE_LAYOUTS_FILE, "r", encoding="utf-8") as f:
-            layouts = json.load(f)
-        with open(ASSET_LIBRARY_FILE, "r", encoding="utf-8") as f:
-            library = json.load(f)
-    except FileNotFoundError:
-        raise HTTPException(status_code=500, detail="Configuration files not found.")
-
-    if not layouts:
-        raise HTTPException(status_code=500, detail="No scenes defined in layouts.")
-
-    # 1. Pre-generate all scenes
-    world_scenes = {}
-    scene_keys = list(layouts.keys())
-    
-    for i, scene_name in enumerate(scene_keys):
-        scene_layout = layouts[scene_name]
-        scene_instance = generate_scene_instance(scene_name, scene_layout, library)
-        world_scenes[scene_name] = {
-            "unlocked": i == 0,  # Unlock the first scene
-            "instance": scene_instance
-        }
-
-    # 2. Reset and update the global game state
-    game_state = {
-        "current_turn": 0,
-        "world_scenes": world_scenes,
-        "active_scene_key": scene_keys[0], # Set the first scene as active
-        "active_rules": ["规则0: 你不能伤害自己。"],
-        "discovered_victory_clues": [],
-        "hidden_victory_condition": "找到出口",
-        "rule_counter": 1,
-    }
-
-    return {
-        "message": "游戏世界已生成！",
-        "initial_state": game_state
-    }
-
-@app.post("/game/action")
-async def player_action(action: PlayerAction):
-    """
-    Placeholder for player action. Returns a simple acknowledgement without AI logic.
-    """
-    global game_state
-    
-    active_scene = game_state["world_scenes"][game_state["active_scene_key"]]["instance"]
-    
-    # --- Placeholder Logic ---
-    # In this testing phase, we don't call the AI.
-    # We just acknowledge the interaction and return the current state.
-    ai_mock_response = {
-        "thought_process": "AI logic is currently disabled for testing.",
-        "ai_response_to_player": f"你与 {action.target} 进行了互动。",
-        "new_rule_generated": None,
-        "game_state_updates": None
-    }
-
-    game_state["current_turn"] += 1
-
-    return {
-        "current_turn": game_state["current_turn"],
-        "active_scene": active_scene,
-        "active_rules": game_state["active_rules"],
-        "discovered_victory_clues": game_state["discovered_victory_clues"],
-        "ai_response": ai_mock_response
-    }
-
-@app.get("/game/state")
-async def get_game_state():
-    return game_state
-
+# 如果直接运行此文件，启动Uvicorn服务器
 if __name__ == "__main__":
+    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,0 +1,214 @@
+[
+  {
+    "id": "npc_wise_old_man",
+    "name": "智慧长者",
+    "description": "一位神秘的长者，似乎知道这个世界的许多秘密。",
+    "entity_type": "npc",
+    "image_path": "entities/wise_old_man.png",
+    "base_stats": {
+      "health": 100,
+      "mana": 200,
+      "disposition": "neutral"
+    },
+    "interaction_rules": [
+      {
+        "interaction_type": "talk",
+        "dialogue": "欢迎来到这个被遗忘的国度，旅行者。你有什么问题吗？"
+      },
+      {
+        "interaction_type": "trade",
+        "conditions": {
+          "player_has_item": "item_ancient_coin"
+        },
+        "effects": {
+          "give_item": "item_map_fragment"
+        },
+        "dialogue": "啊，一枚古老的硬币。作为交换，我给你这个地图碎片。"
+      }
+    ],
+    "spawn_weight": 0.8,
+    "rarity": "uncommon"
+  },
+  {
+    "id": "npc_crystal_guardian",
+    "name": "水晶守护者",
+    "description": "一个由纯粹能量构成的生物，守护着水晶洞窟的秘密。",
+    "entity_type": "npc",
+    "image_path": "entities/crystal_guardian.png",
+    "base_stats": {
+      "health": 500,
+      "attack": 50,
+      "disposition": "hostile"
+    },
+    "interaction_rules": [
+      {
+        "interaction_type": "attack",
+        "effects": {
+          "damage": 50
+        }
+      }
+    ],
+    "spawn_weight": 0.5,
+    "rarity": "rare"
+  },
+  {
+    "id": "npc_cyber_merchant",
+    "name": "赛博商人",
+    "description": "一个在赛博都市中游走的神秘商人，出售稀有的科技物品。",
+    "entity_type": "npc",
+    "image_path": "entities/cyber_merchant.png",
+    "base_stats": {
+      "credits": 5000,
+      "disposition": "neutral"
+    },
+    "interaction_rules": [
+      {
+        "interaction_type": "talk",
+        "dialogue": "想买点什么吗？我这里有最新的科技产品，价格公道。"
+      },
+      {
+        "interaction_type": "trade",
+        "conditions": {
+          "player_has_item": "item_data_chip"
+        },
+        "effects": {
+          "give_item": "item_energy_cell"
+        },
+        "dialogue": "这个数据芯片很有趣，给你这个能量电池作为交换。"
+      }
+    ],
+    "spawn_weight": 0.6,
+    "rarity": "uncommon"
+  },
+  {
+    "id": "obj_ancient_altar",
+    "name": "古代祭坛",
+    "description": "一个刻有复杂符文的石制祭坛，似乎可以用来进行某种仪式。",
+    "entity_type": "object",
+    "image_path": "objects/ancient_altar.png",
+    "base_stats": {
+      "activated": false
+    },
+    "interaction_rules": [
+      {
+        "interaction_type": "activate",
+        "conditions": {
+          "player_has_item": "item_crystal_heart"
+        },
+        "effects": {
+          "set_state": {
+            "activated": true
+          },
+          "trigger_event": "temple_power_restored"
+        },
+        "dialogue": "你将水晶之心放在祭坛上，整个神殿开始震动。"
+      }
+    ],
+    "spawn_weight": 1.0,
+    "rarity": "common"
+  },
+  {
+    "id": "obj_broken_console",
+    "name": "损坏的控制台",
+    "description": "一个损坏的控制台，似乎是数据中心的电源控制。",
+    "entity_type": "object",
+    "image_path": "objects/broken_console.png",
+    "base_stats": {
+      "repaired": false
+    },
+    "interaction_rules": [
+      {
+        "interaction_type": "use",
+        "conditions": {
+          "player_has_item": "item_repair_kit"
+        },
+        "effects": {
+          "set_state": {
+            "repaired": true
+          },
+          "trigger_event": "power_restored"
+        },
+        "dialogue": "你使用维修工具修复了控制台，数据中心恢复了电力。"
+      }
+    ],
+    "spawn_weight": 0.7,
+    "rarity": "uncommon"
+  },
+  {
+    "id": "item_ancient_coin",
+    "name": "古老硬币",
+    "description": "一枚刻有未知符号的古老硬币，似乎很有价值。",
+    "entity_type": "object",
+    "image_path": "objects/ancient_coin.png",
+    "base_stats": {
+      "value": 100
+    },
+    "interaction_rules": [
+      {
+        "interaction_type": "observe",
+        "dialogue": "硬币上的符号似乎与古代祭坛上的符文有些相似。"
+      }
+    ],
+    "spawn_weight": 0.7,
+    "rarity": "common"
+  },
+  {
+    "id": "item_map_fragment",
+    "name": "地图碎片",
+    "description": "一张古老地图的碎片，指向一个未知的地方。",
+    "entity_type": "object",
+    "image_path": "objects/map_fragment.png",
+    "base_stats": {},
+    "interaction_rules": [],
+    "spawn_weight": 0.5,
+    "rarity": "uncommon"
+  },
+  {
+    "id": "item_crystal_heart",
+    "name": "水晶之心",
+    "description": "一块蕴含着巨大能量的水晶核心，似乎是某个装置的关键。",
+    "entity_type": "object",
+    "image_path": "objects/crystal_heart.png",
+    "base_stats": {
+      "energy": 1000
+    },
+    "interaction_rules": [],
+    "spawn_weight": 0.2,
+    "rarity": "rare"
+  },
+  {
+    "id": "item_data_chip",
+    "name": "数据芯片",
+    "description": "一个存储着重要数据的高科技芯片。",
+    "entity_type": "object",
+    "image_path": "objects/data_chip.png",
+    "base_stats": {},
+    "interaction_rules": [],
+    "spawn_weight": 0.6,
+    "rarity": "common"
+  },
+  {
+    "id": "item_energy_cell",
+    "name": "能量电池",
+    "description": "一个充满能量的电池，可以为高科技设备供电。",
+    "entity_type": "object",
+    "image_path": "objects/energy_cell.png",
+    "base_stats": {
+      "charge": 100
+    },
+    "interaction_rules": [],
+    "spawn_weight": 0.5,
+    "rarity": "uncommon"
+  },
+  {
+    "id": "item_repair_kit",
+    "name": "维修工具",
+    "description": "一套用于修复损坏设备的工具。",
+    "entity_type": "object",
+    "image_path": "objects/repair_kit.png",
+    "base_stats": {},
+    "interaction_rules": [],
+    "spawn_weight": 0.4,
+    "rarity": "common"
+  }
+]
